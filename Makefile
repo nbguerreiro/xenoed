@@ -37,7 +37,7 @@ sanitize: main
 fanalyzer: main
 
 main: $(SRC)
-	$(CC) -o $(BIN) $(SRC) $(CFLAGS) $(LDFLAGS) 2>&1 | tee -a out.log;
+	$(CC) -o $(BIN) $(SRC) $(CFLAGS) $(LDFLAGS) 2>&1 | tee out.log;
 
 clean:
 	rm -rfv $(BIN) reports src/*.o *.s *.bc *.db *.log
