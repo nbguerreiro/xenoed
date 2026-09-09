@@ -238,8 +238,12 @@ static void perform_search(Editor *ed) {
      * matches in, so a match's byte offset can be mapped straight back to
      * one of our lines with no re-parsing of anything grep printed. */
     size_t *line_start = malloc(b->count * sizeof(size_t));
+    if(line_start == NULL){ _exit(-1); };
+
     size_t total = 0;
     FILE *tmp_f = fdopen(tmp_fd, "w");
+    if(tmp_f == NULL){ _exit(-1); };
+
     for (size_t i = 0; i < b->count; i++) {
         Line *l = buffer_line(b, i);
         line_start[i] = total;
@@ -295,6 +299,7 @@ static void perform_search(Editor *ed) {
         if (outlen + (size_t)n > outcap) {
             outcap = (outlen + (size_t)n) * 2 + 64;
             out = realloc(out, outcap);
+            if(out == NULL){ _exit(-1); };
         }
         memcpy(out + outlen, chunk, (size_t)n);
         outlen += (size_t)n;
@@ -323,7 +328,9 @@ static void perform_search(Editor *ed) {
      * we already know exactly how the file was laid out; li advances
      * monotonically across matches rather than resetting per-match, since
      * grep reports them in increasing file order. */
-    SearchMatch *matches = NULL;
+    SearchMatch *matches = malloc(sizeof(SearchMatch));
+    if(matches == NULL){ _exit(-1); };
+            
     size_t match_count = 0, match_cap = 0;
     size_t li = 0;
     char *p = out, *end = out + outlen;
@@ -340,6 +347,7 @@ static void perform_search(Editor *ed) {
                     if (match_count + 1 > match_cap) {
                         match_cap = match_cap ? match_cap * 2 : 16;
                         matches = realloc(matches, match_cap * sizeof(SearchMatch));
+                        if(matches == NULL){ _exit(-1); };
                     }
                     matches[match_count].line = li;
                     matches[match_count].col = (size_t)byte_off - line_start[li];
@@ -498,6 +506,7 @@ static char *run_filter(const char *script, const char *filename,
         if (outlen + (size_t)n > outcap) {
             outcap = (outlen + (size_t)n) * 2 + 64;
             out = realloc(out, outcap);
+            if(out == NULL){ _exit(-1); };
         }
         memcpy(out + outlen, chunk, (size_t)n);
         outlen += (size_t)n;
@@ -688,6 +697,7 @@ static char *run_dmenu(Display *dpy, Window win, const char *const *items, int n
         if (outlen + (size_t)n > outcap) {
             outcap = (outlen + (size_t)n) * 2 + 64;
             out = realloc(out, outcap);
+            if(out == NULL){ _exit(-1); };
         }
         memcpy(out + outlen, chunk, (size_t)n);
         outlen += (size_t)n;
