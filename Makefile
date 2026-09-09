@@ -42,3 +42,11 @@ main: $(SRC)
 clean:
 	rm -rfv $(BIN) reports src/*.o *.s *.bc *.db *.log
 
+install:
+	cp $(BIN) ${HOME}/.local/bin/xenoed
+	chmod 755 ${HOME}/.local/bin/xenoed
+
+uninstall:
+	rm ${HOME}/.local/bin/xenoed
+
+
