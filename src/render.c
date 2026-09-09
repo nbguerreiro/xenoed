@@ -6,28 +6,36 @@
 
 /* Light "sepia paper" theme. Values are 0..1 for cairo_set_source_rgb(a). */
 
-/* #dfbfbf */
+/* background #dfbfbf */
 #define BG_R 0.874
 #define BG_G 0.749
 #define BG_B 0.749
 
-#define FG_R 0.0 /* black */
+/* black */
+#define FG_R 0.0
 #define FG_G 0.0
 #define FG_B 0.0
 
-#define CURSOR_R 0.541 /* warm amber accent, #8a5a24 */
+/*cursor*/
+/* warm amber accent, #8a5a24 */
+#define CURSOR_R 0.541
 #define CURSOR_G 0.353
 #define CURSOR_B 0.141
 
-#define STATUSBG_R 0.906 /* #e7d9b8, slightly darker sepia */
+/*bottom bar*/
+/* #e7d9b8, slightly darker sepia */
+#define STATUSBG_R 0.906
 #define STATUSBG_G 0.851
 #define STATUSBG_B 0.722
 
-#define STATUSFG_R 0.286 /* #494133-ish dark brown */
+/*bottom bar text*/
+/* #494133-ish dark brown */
+#define STATUSFG_R 0.286
 #define STATUSFG_G 0.255
 #define STATUSFG_B 0.200
 
-#define SELECTION_R 0.71 /* soft goldenrod highlight, sits well on sepia */
+/* soft goldenrod highlight, sits well on sepia */
+#define SELECTION_R 0.71
 #define SELECTION_G 0.58
 #define SELECTION_B 0.20
 #define SELECTION_A 0.35
