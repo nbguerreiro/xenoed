@@ -460,7 +460,7 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
             if (i < len && text[i] != '\n') continue;
 
             Line *l = buffer_line(b, ed->cur_line);
-            line_insert_bytes(l, ed->cur_col, text + seg_start, i - seg_start);
+            line_insert_bytes(l, ed->cur_col + 1, text + seg_start, i - seg_start);
             ed->cur_col += (i - seg_start);
 
             if (i < len) { /* text[i] == '\n': split the line right here */
