@@ -15,6 +15,10 @@
 #define XENOED_FONT "Sans 14"
 #endif
 
+#ifndef XENOED_FONT_BAR
+#define XENOED_FONT_BAR "Sans 11"
+#endif
+
 /* --- External commands -------------------------------------------------
  *
  * A compile-time table of external scripts, each optionally reachable from

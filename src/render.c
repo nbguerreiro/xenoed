@@ -22,13 +22,13 @@
 #define CURSOR_G 0.353
 #define CURSOR_B 0.141
 
-/*bottom bar*/
+/*status bar*/
 /* #e7d9b8, slightly darker sepia */
 #define STATUSBG_R 0.906
 #define STATUSBG_G 0.851
 #define STATUSBG_B 0.722
 
-/*bottom bar text*/
+/*status bar text*/
 /* #494133-ish dark brown */
 #define STATUSFG_R 0.286
 #define STATUSFG_G 0.255
