@@ -1,31 +1,44 @@
-CC ?= cc
+CC = gcc
+
+# https://wiki.debian.org/Hardening
+# $ hardening-check out
+DPKG_EXPORT_BUILDFLAGS = 1
+
 PKGS = x11 cairo pangocairo
-BASE_CFLAGS = -O2 -g -Wall -Wextra -std=c11 $(shell pkg-config --cflags $(PKGS))
-LDLIBS += $(shell pkg-config --libs $(PKGS))
+C := $(shell pkg-config --cflags $(PKGS))
+L := $(shell pkg-config --libs $(PKGS))
 
-# For build-time overrides that don't touch source, e.g.:
-#   make EXTRA_CFLAGS='-DXENOED_FONT="Georgia 14"'
-# A separate variable (rather than just appending to CFLAGS in this
-# Makefile) because `make CFLAGS=...` on the command line takes precedence
-# over -- and completely replaces, not merges with -- any CFLAGS this
-# Makefile itself sets, which would silently drop BASE_CFLAGS above
-# (including the pkg-config include paths) rather than add to it.
-EXTRA_CFLAGS ?=
-CFLAGS = $(BASE_CFLAGS) $(EXTRA_CFLAGS)
+CFLAGS := $(shell dpkg-buildflags --get CFLAGS) 
+LDFLAGS := $(shell dpkg-buildflags --get LDFLAGS) 
 
-SRC = src/main.c src/editor.c src/buffer.c src/render.c
-OBJ = $(SRC:.c=.o)
-BIN = xenoed
+CFLAGS += -D_FORTIFY_SOURCE=3 -fstack-protector-all
+CFLAGS += $(C) $(L)
+CFLAGS += -DDEBUG=0
 
-.PHONY: all clean
+BIN := out
 
-all: $(BIN)
+debug: CFLAGS := -ggdb3 \
+	-pedantic -W -Wall -Wstrict-prototypes -Wunreachable-code  \
+	-Wwrite-strings -Wpointer-arith -Wbad-function-cast \
+	-Wcast-align -Wcast-qual \
+	-Wfree-nonheap-object
+debug: CFLAGS += $(C) $(L)
+debug: CFLAGS += -DDEBUG=1
 
-$(BIN): $(OBJ)
-	$(CC) $(OBJ) -o $@ $(LDLIBS)
+fanalyzer: CFLAGS += -g -O1 -fanalyzer
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+sanitize: CFLAGS += -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
+
+SRC := src/main.c src/editor.c src/buffer.c src/render.c
+
+all: main
+debug: main
+sanitize: main
+fanalyzer: main
+
+main: $(SRC)
+	$(CC) -o $(BIN) $(SRC) $(CFLAGS) $(LDFLAGS) 2>&1 | tee -a out.log;
 
 clean:
-	rm -f $(OBJ) $(BIN)
+	rm -rfv $(BIN) reports src/*.o *.s *.bc *.db *.log
+
