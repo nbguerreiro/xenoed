@@ -1,0 +1,12 @@
+*
+
+!.gitignore
+!Makefile
+
+!src/
+!src/*.c
+!src/*.h
+
+!tests/
+!tests/*.c
+
