@@ -872,11 +872,11 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     /* Any actual edit (Enter, Backspace, or typing) replaces an active
      * selection first, same as a typical GUI text editor. */
     int is_edit = (special == EKEY_RETURN || special == EKEY_BACKSPACE ||
-                   (special == EKEY_NONE && len >= 1));
+                   special == EKEY_DELETE || (special == EKEY_NONE && len >= 1));
     if (is_edit && editor_has_selection(ed)) {
         editor_delete_selection(ed);
         l = buffer_line(b, ed->cur_line); /* buffer may have been mutated */
-        if (special == EKEY_BACKSPACE) return; /* Backspace-on-selection just deletes it */
+        if (special == EKEY_DELETE || special == EKEY_BACKSPACE) return; /* Backspace-on-selection just deletes it */
     }
 
     if (special == EKEY_RETURN) {

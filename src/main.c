@@ -769,6 +769,7 @@ static EditorSpecialKey classify_keysym(KeySym ks, unsigned int state) {
     switch (ks) {
         case XK_Escape:    return EKEY_ESCAPE;
         case XK_BackSpace: return EKEY_BACKSPACE;
+        case XK_Delete:    return EKEY_DELETE;
         case XK_Return:
         case XK_KP_Enter:  return EKEY_RETURN;
         case XK_Left:      return shift ? EKEY_SHIFT_LEFT  : EKEY_LEFT;

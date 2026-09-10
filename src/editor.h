@@ -18,6 +18,7 @@ typedef enum {
     EKEY_NONE = 0,
     EKEY_ESCAPE,
     EKEY_BACKSPACE,
+    EKEY_DELETE,
     EKEY_RETURN,
     EKEY_LEFT,
     EKEY_RIGHT,
