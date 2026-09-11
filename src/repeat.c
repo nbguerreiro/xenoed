@@ -1,4 +1,5 @@
 #include "editor.h"
+#include <X11/Xlib.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -93,12 +94,30 @@ static void replay(Editor *ed) {
 }
 
 static char *run_search_dmenu(void) {
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return NULL;
+
+    Window win = None;
+    int revert = RevertToNone;
+    XGetInputFocus(dpy, &win, &revert);
+    if (win == None || win == PointerRoot) {
+        XCloseDisplay(dpy);
+        return NULL;
+    }
+
+    char win_str[32];
+    snprintf(win_str, sizeof(win_str), "%lu", (unsigned long)win);
+
     int inpipe[2];
     int outpipe[2];
-    if (pipe(inpipe) != 0) return NULL;
+    if (pipe(inpipe) != 0) {
+        XCloseDisplay(dpy);
+        return NULL;
+    }
     if (pipe(outpipe) != 0) {
         close(inpipe[0]);
         close(inpipe[1]);
+        XCloseDisplay(dpy);
         return NULL;
     }
 
@@ -106,6 +125,7 @@ static char *run_search_dmenu(void) {
     if (pid < 0) {
         close(inpipe[0]); close(inpipe[1]);
         close(outpipe[0]); close(outpipe[1]);
+        XCloseDisplay(dpy);
         return NULL;
     }
 
@@ -114,14 +134,15 @@ static char *run_search_dmenu(void) {
         dup2(outpipe[1], STDOUT_FILENO);
         close(inpipe[0]); close(inpipe[1]);
         close(outpipe[0]); close(outpipe[1]);
-        execl("/bin/sh", "sh", "-c", "${DMENU:-dmenu} -p 'search:'",
-              "sh", (char *)NULL);
+        execl("/bin/sh", "sh", "-c", "${DMENU:-dmenu} -w \"$1\" -p 'search:'",
+              "sh", win_str, (char *)NULL);
         _exit(127);
     }
 
     close(inpipe[0]);
     close(inpipe[1]);
     close(outpipe[1]);
+    XCloseDisplay(dpy);
 
     char *out = NULL;
     size_t outlen = 0, outcap = 0;
