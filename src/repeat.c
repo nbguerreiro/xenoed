@@ -99,15 +99,14 @@ static Window top_level_window(Display *dpy, Window win) {
     Window *children = NULL;
     unsigned int child_count = 0;
 
-    while (win != root && win != None) {
-        Window next = None;
-        if (!XQueryTree(dpy, win, &root, &next, &children, &child_count)) break;
+    while (win != None && win != root) {
+        Window tree_root = None;
+        if (!XQueryTree(dpy, win, &tree_root, &parent, &children, &child_count)) break;
         if (children) XFree(children);
-        if (next == None || next == win) break;
-        win = next;
-        parent = win;
+        if (parent == None || parent == tree_root) return win;
+        win = parent;
     }
-    return parent != None ? parent : win;
+    return win;
 }
 
 static char *run_search_dmenu(void) {
