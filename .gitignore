@@ -2,6 +2,7 @@
 
 !.gitignore
 !Makefile
+!README.md
 
 !src/
 !src/*.c
