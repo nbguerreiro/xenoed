@@ -621,10 +621,14 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             if (l->len > 0) {
                 editor_checkpoint(ed);
                 size_t next = utf8_next_boundary(l->data, l->len, ed->cur_col);
+                char *copy = malloc(next - ed->cur_col);
+                memcpy(copy, l->data + ed->cur_col, next - ed->cur_col);
+                editor_set_yank(ed, copy, next - ed->cur_col);
                 line_delete_bytes(l, ed->cur_col, next - ed->cur_col);
                 b->dirty = 1;
                 editor_clamp_cursor(ed);
             }
+
             break;
         case 'd': ed->pending_op = 'd'; break;
         case 'y': ed->pending_op = 'y'; break;
