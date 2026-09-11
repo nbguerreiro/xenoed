@@ -25,7 +25,7 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
 
 /* Number of text rows that fit in a window of the given pixel height,
  * reserving one row at the bottom for the status/command line. */
-int render_visible_rows(RenderState *rs, int height);
+int render_visible_rows(const RenderState *rs, int height);
 
 /* Hit-tests a pixel position (as from an X ButtonPress/MotionNotify event)
  * against the currently-visible text and reports which line/byte-offset it
