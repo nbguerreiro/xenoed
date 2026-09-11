@@ -154,41 +154,55 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
 
     int status_y = visible_rows * rs->row_height;
 
-    char line_text[512];
-    if (ed->mode == MODE_SEARCH) {
-        snprintf(line_text, sizeof(line_text), "/%s", ed->cmdline);
-    } else if (ed->status[0]) {
-        snprintf(line_text, sizeof(line_text), "%s", ed->status);
-    } else {
-        const char *fname = buf->filename ? buf->filename : "[No Name]";
-        const char *dirty = buf->dirty ? " [+]" : "";
-        Line *current_line = buffer_line(buf, ed->cur_line);
-        size_t col = 1 + (size_t)g_utf8_strlen(current_line->data,
-                                                (glong)ed->cur_col);
-        snprintf(line_text, sizeof(line_text), "%-30s  %4zu/%-4zu  %4zu",
-                 fname, ed->cur_line + 1, buf->count, col);
-        (void)dirty;
-    }
-
     PangoFontDescription *bar_font_desc = pango_font_description_from_string(XENOED_FONT_BAR);
-    PangoLayout *status_layout = pango_cairo_create_layout(cr);
-    pango_layout_set_font_description(status_layout, bar_font_desc);
-    pango_layout_set_text(status_layout, line_text, -1);
 
-    int text_width = 0;
-    pango_layout_get_pixel_size(status_layout, &text_width, NULL);
-    int status_x = width - rs->padding - text_width;
-    if (status_x < rs->padding) status_x = rs->padding;
+    /* Keep each status-bar section at a fixed screen position. */
+    const int col_width = 56;
+    const int line_width = 100;
+    const int section_gap = 12;
+    const int col_x = width - rs->padding - col_width;
+    const int line_x = col_x - section_gap - line_width;
+    const int name_x = rs->padding;
+    const int name_width = line_x - section_gap - name_x;
+
+    const char *fname = buf->filename ? buf->filename : "[No Name]";
+    char line_text[64];
+    char col_text[32];
+    snprintf(line_text, sizeof(line_text), "%zu/%zu", ed->cur_line + 1, buf->count);
+    Line *current_line = buffer_line(buf, ed->cur_line);
+    size_t col = 1 + (size_t)g_utf8_strlen(current_line->data,
+                                            (glong)ed->cur_col);
+    snprintf(col_text, sizeof(col_text), "%zu", col);
+
+    PangoLayout *name_layout = pango_cairo_create_layout(cr);
+    pango_layout_set_font_description(name_layout, bar_font_desc);
+    pango_layout_set_width(name_layout, name_width * PANGO_SCALE);
+    pango_layout_set_ellipsize(name_layout, PANGO_ELLIPSIZE_END);
+    pango_layout_set_text(name_layout, fname, -1);
+
+    PangoLayout *line_layout = pango_cairo_create_layout(cr);
+    pango_layout_set_font_description(line_layout, bar_font_desc);
+    pango_layout_set_width(line_layout, line_width * PANGO_SCALE);
+    pango_layout_set_alignment(line_layout, PANGO_ALIGN_RIGHT);
+    pango_layout_set_text(line_layout, line_text, -1);
+
+    PangoLayout *col_layout = pango_cairo_create_layout(cr);
+    pango_layout_set_font_description(col_layout, bar_font_desc);
+    pango_layout_set_width(col_layout, col_width * PANGO_SCALE);
+    pango_layout_set_alignment(col_layout, PANGO_ALIGN_RIGHT);
+    pango_layout_set_text(col_layout, col_text, -1);
 
     cairo_set_source_rgb(cr, STATUSFG_R, STATUSFG_G, STATUSFG_B);
-    cairo_move_to(cr, status_x, status_y);
-    pango_cairo_show_layout(cr, status_layout);
+    cairo_move_to(cr, name_x, status_y);
+    pango_cairo_show_layout(cr, name_layout);
+    cairo_move_to(cr, line_x, status_y);
+    pango_cairo_show_layout(cr, line_layout);
+    cairo_move_to(cr, col_x, status_y);
+    pango_cairo_show_layout(cr, col_layout);
 
-    if (ed->mode == MODE_SEARCH) {
-        draw_cursor(cr, rs, status_layout, ed->cmdlen + 1, status_y, fallback_cursor_w, 0);
-    }
-
-    g_object_unref(status_layout);
+    g_object_unref(name_layout);
+    g_object_unref(line_layout);
+    g_object_unref(col_layout);
     pango_font_description_free(bar_font_desc);
     cairo_destroy(cr);
 }
