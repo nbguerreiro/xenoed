@@ -520,6 +520,7 @@ static void editor_dispatch_leader_key(Editor *ed, char key) {
             return;
         }
     }
+    set_status(ed, "E: unknown leader command: %c", key);
 }
 
 static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text, int len) {
@@ -554,6 +555,10 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
                 editor_clamp_cursor(ed);
             } else if (op == 'y') {
                 editor_yank_line(ed);
+            } else if (op == 'g') {
+                ed->cur_line = 0;
+                ed->cur_col = 0;
+                editor_clamp_cursor(ed);
             }
         }
         return;
@@ -603,16 +608,22 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             break;
         case 'x':
             if (l->len > 0) {
-                editor_checkpoint(ed);
                 size_t next = utf8_next_boundary(l->data, l->len, ed->cur_col);
-                line_delete_bytes(l, ed->cur_col, next - ed->cur_col);
+                size_t yank_len = next - ed->cur_col;
+                char *copy = malloc(yank_len + 1);
+                memcpy(copy, l->data + ed->cur_col, yank_len);
+                copy[yank_len] = '\0';
+                editor_set_yank(ed, copy, yank_len);
+                editor_checkpoint(ed);
+                line_delete_bytes(l, ed->cur_col, yank_len);
                 b->dirty = 1;
                 editor_clamp_cursor(ed);
             }
             break;
         case 'd': ed->pending_op = 'd'; break;
         case 'y': ed->pending_op = 'y'; break;
-        case 'p': ed->paste_requested = 1; break;
+        case 'p': paste_before_requested = 0; ed->paste_requested = 1; break;
+        case 'P': paste_before_requested = 1; ed->paste_requested = 1; break;
         case 'u': editor_undo(ed); break;
         case 'v':
             editor_selection_start(ed);
@@ -639,248 +650,5 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             } else set_status(ed, "E: no previous search");
             break;
         default: break;
-    }
-}
-
-static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text, int len) {
-    if (special == EKEY_UP)    { move_vert(ed, -1); return; }
-    if (special == EKEY_DOWN)  { move_vert(ed, +1); return; }
-    if (special == EKEY_LEFT)  { move_left(ed); return; }
-    if (special == EKEY_RIGHT) { move_right(ed); return; }
-    if (special != EKEY_NONE) { ed->leader_pending = 0; return; }
-    if (len < 1) return;
-
-    char c = text[0];
-
-    if (ed->leader_pending) {
-        ed->leader_pending = 0;
-        editor_dispatch_leader_key(ed, c);
-        return;
-    }
-
-    switch (c) {
-        case 'h': move_left(ed); break;
-        case 'l': move_right(ed); break;
-        case 'j': move_vert(ed, +1); break;
-        case 'k': move_vert(ed, -1); break;
-        case '0': ed->cur_col = 0; break;
-        case '$': {
-            const Line *l = buffer_line(ed->buf, ed->cur_line);
-            ed->cur_col = (l->len == 0) ? 0 : utf8_prev_boundary(l->data, l->len);
-            break;
-        }
-        case 'y': {
-            char *text_out = NULL;
-            size_t tlen = 0;
-            if (editor_get_selection_text(ed, &text_out, &tlen)) {
-                editor_set_yank(ed, text_out, tlen);
-                set_status(ed, "%zu bytes yanked", tlen);
-            }
-            size_t fl, fc, tl, tc;
-            editor_selection_range(ed, &fl, &fc, &tl, &tc);
-            ed->cur_line = fl;
-            ed->cur_col = fc;
-            editor_selection_clear(ed);
-            ed->mode = MODE_NORMAL;
-            editor_clamp_cursor(ed);
-            break;
-        }
-        case 'd':
-        case 'x':
-            editor_cut_selection(ed);
-            break;
-        case 'p':
-            ed->mode = MODE_NORMAL;
-            ed->paste_requested = 1;
-            break;
-        case XENOED_LEADER: ed->leader_pending = 1; break;
-        default: break;
-    }
-}
-
-static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text, int len) {
-    Buffer *b = ed->buf;
-    Line *l = buffer_line(b, ed->cur_line);
-
-    size_t prev = 0;
-    size_t next = 0;
-
-    switch (special) {
-        case EKEY_SHIFT_LEFT:
-            if (!ed->sel_active) editor_selection_start(ed);
-            move_left(ed);
-            return;
-        case EKEY_SHIFT_RIGHT:
-            if (!ed->sel_active) editor_selection_start(ed);
-            move_right(ed);
-            return;
-        case EKEY_SHIFT_UP:
-            if (!ed->sel_active) editor_selection_start(ed);
-            move_vert(ed, -1);
-            return;
-        case EKEY_SHIFT_DOWN:
-            if (!ed->sel_active) editor_selection_start(ed);
-            move_vert(ed, +1);
-            return;
-        case EKEY_LEFT:
-            prev = utf8_prev_boundary(l->data, ed->cur_col);
-            next = utf8_next_boundary(l->data, l->len, ed->cur_col);
-            (void)prev;
-            (void)next;
-            editor_selection_clear(ed);
-            move_left(ed);
-            return;
-        case EKEY_RIGHT:
-            prev = utf8_prev_boundary(l->data, ed->cur_col);
-            next = utf8_next_boundary(l->data, l->len, ed->cur_col);
-            (void)prev;
-            (void)next;
-            editor_selection_clear(ed);
-            move_right(ed);
-            return;
-        case EKEY_UP:
-            editor_selection_clear(ed);
-            move_vert(ed, -1);
-            return;
-        case EKEY_DOWN:
-            editor_selection_clear(ed);
-            move_vert(ed, +1);
-            return;
-        default:
-            break;
-    }
-
-    if (special == EKEY_NONE && len >= 1) {
-        unsigned char c0 = (unsigned char)text[0];
-        if (c0 == 0x18) {
-            editor_cut_selection(ed);
-            return;
-        }
-        if (c0 == 0x03) {
-            editor_yank_selection(ed);
-            return;
-        }
-    }
-
-    int is_edit = (special == EKEY_RETURN || special == EKEY_BACKSPACE ||
-                   special == EKEY_DELETE || (special == EKEY_NONE && len >= 1));
-    if (is_edit && editor_has_selection(ed)) {
-        editor_delete_selection(ed);
-        l = buffer_line(b, ed->cur_line);
-        if (special == EKEY_DELETE || special == EKEY_BACKSPACE) return;
-    }
-
-    if (special == EKEY_RETURN) {
-        size_t rest_len = l->len - ed->cur_col;
-        buffer_insert_line(b, ed->cur_line + 1, l->data + ed->cur_col, rest_len);
-        l = buffer_line(b, ed->cur_line);
-        line_delete_bytes(l, ed->cur_col, rest_len);
-        ed->cur_line++;
-        ed->cur_col = 0;
-        b->dirty = 1;
-        return;
-    }
-
-    if (special == EKEY_BACKSPACE) {
-        if (ed->cur_col > 0) {
-            size_t prev_col = utf8_prev_boundary(l->data, ed->cur_col);
-            line_delete_bytes(l, prev_col, ed->cur_col - prev_col);
-            ed->cur_col = prev_col;
-            b->dirty = 1;
-        } else if (ed->cur_line > 0) {
-            Line *prevline = buffer_line(b, ed->cur_line - 1);
-            size_t join_col = prevline->len;
-            line_insert_bytes(prevline, prevline->len, l->data, l->len);
-            buffer_remove_line(b, ed->cur_line);
-            ed->cur_line--;
-            ed->cur_col = join_col;
-            b->dirty = 1;
-        }
-        return;
-    }
-
-    if (special == EKEY_DELETE) {
-        if (l->len > 0) {
-            editor_checkpoint(ed);
-            size_t next_col = utf8_next_boundary(l->data, l->len, ed->cur_col);
-            line_delete_bytes(l, ed->cur_col, next_col - ed->cur_col);
-            b->dirty = 1;
-            editor_clamp_cursor(ed);
-        }
-        return;
-    }
-
-    if (special != EKEY_NONE) return;
-    if (len < 1) return;
-
-    unsigned char c0 = (unsigned char)text[0];
-    if (c0 == 0x16) {
-        ed->paste_requested = 1;
-        return;
-    }
-    if (c0 < 0x20 && c0 != '\t') return;
-    if (c0 == 0x7F) return;
-
-    line_insert_bytes(l, ed->cur_col, text, len);
-    ed->cur_col += (size_t)len;
-    b->dirty = 1;
-}
-
-static void handle_search(Editor *ed, EditorSpecialKey special, const char *text, int len) {
-    if (special == EKEY_RETURN) {
-        if (ed->cmdlen > 0) {
-            memcpy(ed->search_pattern, ed->cmdline, ed->cmdlen);
-            ed->search_pattern[ed->cmdlen] = '\0';
-            ed->search_requested = 1;
-            ed->search_backward = 0;
-        }
-        ed->mode = MODE_NORMAL;
-        ed->cmdlen = 0;
-        return;
-    }
-    if (special == EKEY_BACKSPACE) {
-        if (ed->cmdlen > 0) {
-            size_t newlen = utf8_prev_boundary(ed->cmdline, ed->cmdlen);
-            ed->cmdlen = newlen;
-            ed->cmdline[newlen] = '\0';
-        } else {
-            ed->mode = MODE_NORMAL;
-        }
-        return;
-    }
-    if (special != EKEY_NONE) return;
-    if (len < 1) return;
-
-    if (ed->cmdlen + (size_t)len < sizeof(ed->cmdline) - 1) {
-        memcpy(ed->cmdline + ed->cmdlen, text, (size_t)len);
-        ed->cmdlen += (size_t)len;
-        ed->cmdline[ed->cmdlen] = '\0';
-    }
-}
-
-void editor_handle_key(Editor *ed, EditorSpecialKey special, const char *text, int text_len) {
-    ed->status[0] = '\0';
-
-    if (special == EKEY_ESCAPE) {
-        if (ed->mode == MODE_INSERT) {
-            ed->mode = MODE_NORMAL;
-            move_left(ed);
-            editor_clamp_cursor(ed);
-        } else if (ed->mode == MODE_SEARCH) {
-            ed->mode = MODE_NORMAL;
-            ed->cmdlen = 0;
-        } else if (ed->mode == MODE_VISUAL) {
-            ed->mode = MODE_NORMAL;
-        }
-        editor_selection_clear(ed);
-        ed->pending_op = 0;
-        return;
-    }
-
-    switch (ed->mode) {
-        case MODE_NORMAL:  handle_normal(ed, special, text, text_len); break;
-        case MODE_INSERT:  handle_insert(ed, special, text, text_len); break;
-        case MODE_VISUAL:  handle_visual(ed, special, text, text_len); break;
-        case MODE_SEARCH:  handle_search(ed, special, text, text_len); break;
     }
 }
