@@ -16,6 +16,8 @@ CFLAGS += $(C) $(L)
 CFLAGS += -DDEBUG=0
 
 BIN := xenoed
+TEST_BIN := tests/test_repeat
+TEST_SRC := tests/test_repeat.c src/editor.c src/buffer.c src/repeat.c
 
 # Keep the normal build warning level modest; debug builds enable the
 # stricter diagnostics used for development.
@@ -38,14 +40,20 @@ debug: main
 sanitize: main
 fanalyzer: main
 
+test: $(TEST_BIN)
+	./$(TEST_BIN)
+
 main: $(SRC)
 	$(CC) -o $(BIN) $(SRC) $(CFLAGS) $(LDFLAGS) -Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key 2>&1 | tee out.log;
+
+$(TEST_BIN): $(TEST_SRC)
+	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o $@ $(TEST_SRC) -Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key
 
 lint:
 	cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr $(SRC)
 
 clean:
-	rm -rfv $(BIN) reports src/*.o *.s *.bc *.db *.log
+	rm -rfv $(BIN) $(TEST_BIN) reports src/*.o *.s *.bc *.db *.log
 
 install:
 	cp $(BIN) ${HOME}/.local/bin/xenoed
