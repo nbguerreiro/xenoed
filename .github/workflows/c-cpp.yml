@@ -1,0 +1,167 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    name: Build (${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    env:
+      CC: ${{ matrix.compiler }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libx11-dev
+
+      - name: Build
+        run: make clean all
+
+      - name: Lint
+        run: make lint
+
+  sanitizers:
+    name: Sanitizers (${{ matrix.sanitizer }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer:
+          - address
+          - undefined
+          - thread
+    env:
+      CFLAGS: -std=c11 -O1 -g -Wall -Wextra -fno-omit-frame-pointer -fsanitize=${{ matrix.sanitizer }}
+      LDFLAGS: -fsanitize=${{ matrix.sanitizer }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libx11-dev
+
+      - name: Build
+        run: make clean all
+
+      - name: Smoke test binary
+        run: test -x ./fm
+
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libx11-dev             cppcheck             clang-tools
+
+      - name: Build with Clang analyzer
+        run: |
+          scan-build --status-bugs make clean all
+
+      - name: Save analyzer report
+        if: always()
+        run: |
+          mkdir -p scan-build-report
+          cp -r /tmp/scan-build-*/* scan-build-report/ 2>/dev/null || true
+
+      - name: Upload analyzer report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-build-report
+          path: scan-build-report
+          if-no-files-found: ignore
+
+      - name: cppcheck
+        run: |
+          cppcheck \
+            --enable=warning,style,performance,portability \
+            --error-exitcode=1 \
+            --inline-suppr \
+            fm.c
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libx11-dev
+
+      - name: Run tests
+        run: make test
+
+  artifact:
+    name: Build artifact
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libx11-dev
+
+      - name: Build
+        run: make clean all
+
+      - name: Upload fm binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: fm-linux-x86_64
+          path: fm
+          if-no-files-found: error
