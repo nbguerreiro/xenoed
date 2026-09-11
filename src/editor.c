@@ -6,21 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Defined further down, alongside the rest of the undo/redo machinery;
- * forward-declared so editor_deinit() (which comes first, to stay next to
- * editor_init()) can use it for cleanup without duplicating its logic. */
 static void undo_stack_clear(UndoSnapshot **stack, size_t *count, size_t *cap);
 
 void editor_init(Editor *ed, Buffer *buf) {
     memset(ed, 0, sizeof(*ed));
     ed->buf = buf;
     ed->mode = MODE_NORMAL;
-
-    /* One-time sanity check on the user's own config.h table: a silently
-     * shadowed duplicate key would be a far more confusing failure mode
-     * than a startup warning. Doesn't fail -- just reports it, same spirit
-     * as an unrecognized ':' command reporting rather than refusing to
-     * run. */
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
         if (XENOED_COMMANDS[i].key == 0) continue;
         for (int j = i + 1; XENOED_COMMANDS[j].script != NULL; j++) {
@@ -42,10 +33,6 @@ void editor_deinit(Editor *ed) {
     undo_stack_clear(&ed->redo_stack, &ed->redo_count, &ed->redo_cap);
 }
 
-/* Normal and Visual mode both keep the cursor resting ON a character
- * (never past the last one); Insert and Command mode allow it to sit right
- * after the last character too (where you'd continue typing). Shared by
- * editor_clamp_cursor() and move_right()'s line-end check below. */
 static int cursor_rests_on_char(const Editor *ed) {
     return ed->mode == MODE_NORMAL || ed->mode == MODE_VISUAL;
 }
@@ -59,7 +46,7 @@ void editor_clamp_cursor(Editor *ed) {
     }
     if (ed->cur_line >= b->count) ed->cur_line = b->count - 1;
 
-    Line *l = buffer_line(b, ed->cur_line);
+    const Line *l = buffer_line(b, ed->cur_line);
     size_t len = l->len;
     size_t max_col;
     if (cursor_rests_on_char(ed)) {
@@ -68,7 +55,6 @@ void editor_clamp_cursor(Editor *ed) {
         max_col = len;
     }
     if (ed->cur_col > max_col) ed->cur_col = max_col;
-    /* Defensive: never leave the cursor mid-codepoint. */
     while (ed->cur_col > 0 && utf8_is_cont((unsigned char)l->data[ed->cur_col])) {
         ed->cur_col--;
     }
@@ -96,10 +82,6 @@ void editor_selection_clear(Editor *ed) {
 
 int editor_has_selection(const Editor *ed) {
     if (!ed->sel_active) return 0;
-    /* Visual mode always has at least the one character under the cursor
-     * selected, even with zero movement since 'v' -- unlike insert-mode
-     * selection, where anchor == cursor genuinely means a zero-width,
-     * nothing-selected gap. */
     if (ed->sel_inclusive) return 1;
     return !(ed->sel_anchor_line == ed->cur_line && ed->sel_anchor_col == ed->cur_col);
 }
@@ -115,18 +97,12 @@ void editor_selection_range(const Editor *ed, size_t *from_line, size_t *from_co
         fl = cl; fc = cc; tl = al; tc = ac;
     }
     if (ed->sel_inclusive) {
-        /* The upper bound (whichever of anchor/cursor it turned out to be)
-         * names a character to rest ON, not a boundary to stop BEFORE --
-         * so advance past it to make the usual half-open [from, to)
-         * convention actually include it. */
-        Line *l = buffer_line(ed->buf, tl);
+        const Line *l = buffer_line(ed->buf, tl);
         tc = utf8_next_boundary(l->data, l->len, tc);
     }
     *from_line = fl; *from_col = fc; *to_line = tl; *to_col = tc;
 }
 
-/* Deletes the currently selected text (if any), leaves the cursor at the
- * start of what was selected, and clears the selection. */
 static void editor_delete_selection(Editor *ed) {
     if (!editor_has_selection(ed)) return;
 
@@ -141,8 +117,6 @@ static void editor_delete_selection(Editor *ed) {
         Line *first = buffer_line(b, fl);
         Line *last = buffer_line(b, tl);
         size_t tail_len = last->len - tc;
-        /* Truncate the first line at fc, then splice on the surviving tail
-         * of the last line; then drop every whole line in between. */
         line_delete_bytes(first, fc, first->len - fc);
         line_insert_bytes(first, first->len, last->data + tc, tail_len);
         for (size_t i = tl; i > fl; i--) buffer_remove_line(b, i);
@@ -156,16 +130,11 @@ static void editor_delete_selection(Editor *ed) {
 
 static void move_left(Editor *ed) {
     if (ed->cur_col > 0) {
-        Line *l = buffer_line(ed->buf, ed->cur_line);
+        const Line *l = buffer_line(ed->buf, ed->cur_line);
         ed->cur_col = utf8_prev_boundary(l->data, ed->cur_col);
     } else if (ed->cur_line > 0) {
-        /* At the start of a line: wrap to the end of the previous one.
-         * Land past the last byte here (prev->len); editor_clamp_cursor
-         * below pulls that back onto the last character in normal mode,
-         * while in insert mode "past the last byte" is exactly the right
-         * spot to keep typing from. */
         ed->cur_line--;
-        Line *prev = buffer_line(ed->buf, ed->cur_line);
+        const Line *prev = buffer_line(ed->buf, ed->cur_line);
         ed->cur_col = prev->len;
     }
     editor_clamp_cursor(ed);
@@ -173,14 +142,8 @@ static void move_left(Editor *ed) {
 
 static void move_right(Editor *ed) {
     Buffer *b = ed->buf;
-    Line *l = buffer_line(b, ed->cur_line);
+    const Line *l = buffer_line(b, ed->cur_line);
     size_t next = utf8_next_boundary(l->data, l->len, ed->cur_col);
-
-    /* "Nothing left to move onto on this line" differs slightly by mode:
-     * normal mode's cursor must always rest ON a character, so it's out of
-     * room as soon as the next boundary would be the end of the line;
-     * insert mode's cursor can rest right after the last character, so
-     * it's only out of room once it's already there. */
     int at_line_end = cursor_rests_on_char(ed) ? (next >= l->len) : (ed->cur_col >= l->len);
 
     if (at_line_end) {
@@ -188,7 +151,6 @@ static void move_right(Editor *ed) {
             ed->cur_line++;
             ed->cur_col = 0;
         }
-        /* else: already at the very end of the buffer -- nowhere to go */
     } else {
         ed->cur_col = next;
     }
@@ -196,7 +158,7 @@ static void move_right(Editor *ed) {
 }
 
 static void move_vert(Editor *ed, int delta) {
-    Line *l = buffer_line(ed->buf, ed->cur_line);
+    const Line *l = buffer_line(ed->buf, ed->cur_line);
     size_t cp = utf8_count(l->data, ed->cur_col);
 
     if (delta < 0) {
@@ -207,7 +169,7 @@ static void move_vert(Editor *ed, int delta) {
         ed->cur_line++;
     }
 
-    Line *nl = buffer_line(ed->buf, ed->cur_line);
+    const Line *nl = buffer_line(ed->buf, ed->cur_line);
     ed->cur_col = utf8_offset_for_count(nl->data, nl->len, cp);
     editor_clamp_cursor(ed);
 }
@@ -218,23 +180,6 @@ static void set_status(Editor *ed, const char *fmt, ...) {
     vsnprintf(ed->status, sizeof(ed->status), fmt, ap);
     va_end(ap);
 }
-
-/* --- Undo/redo -------------------------------------------------------
- *
- * Whole-buffer snapshots, not per-edit diffs. For a "lightweight editor
- * for actual files" (not a giant-document IDE), a full deep copy per undo
- * step is cheap enough to not matter, and it sidesteps a whole class of
- * bugs that a hand-rolled diff/patch representation would risk getting
- * subtly wrong -- simplicity over cleverness, same trade-off this project
- * has made everywhere else.
- *
- * Granularity matches vim: each discrete normal-mode command (x, dd, p)
- * is its own undo step, taken immediately before that command mutates the
- * buffer. An entire insert-mode session -- everything typed between
- * i/a/A/I/o/O and Esc, including any mid-session selection-replace -- is
- * ONE undo step, because the checkpoint is taken once, when insert mode
- * is entered, and nothing inside handle_insert() ever checkpoints again.
- */
 
 #define UNDO_MAX_DEPTH 500
 
@@ -255,17 +200,15 @@ static void undo_stack_clear(UndoSnapshot **stack, size_t *count, size_t *cap) {
 static void undo_stack_push(UndoSnapshot **stack, size_t *count, size_t *cap, UndoSnapshot snap) {
     if (*count + 1 > *cap) {
         size_t newcap = *cap ? *cap * 2 : 8;
-        *stack = realloc(*stack, newcap * sizeof(UndoSnapshot));
+        UndoSnapshot *new_stack = realloc(*stack, newcap * sizeof(UndoSnapshot));
+        if (!new_stack) _exit(1);
+        *stack = new_stack;
         *cap = newcap;
     }
     (*stack)[*count] = snap;
     (*count)++;
 }
 
-/* Bounds memory use over a long editing session: once the undo stack is
- * deeper than UNDO_MAX_DEPTH, the oldest steps are dropped. O(depth) per
- * call, but that only happens once we're already at the cap, and the cap
- * is small enough (500) for that to be unmeasurable. */
 static void undo_stack_trim(UndoSnapshot **stack, size_t *count, size_t max_depth) {
     if (*count <= max_depth) return;
     size_t drop = *count - max_depth;
@@ -280,7 +223,7 @@ static void snapshot_capture(const Editor *ed, UndoSnapshot *out) {
     out->line_data = malloc(b->count * sizeof(char *));
     out->line_len = malloc(b->count * sizeof(size_t));
     for (size_t i = 0; i < b->count; i++) {
-        Line *l = buffer_line(b, i);
+        const Line *l = buffer_line(b, i);
         out->line_data[i] = malloc(l->len + 1);
         memcpy(out->line_data[i], l->data, l->len);
         out->line_data[i][l->len] = '\0';
@@ -295,7 +238,9 @@ static void snapshot_restore(Editor *ed, const UndoSnapshot *snap) {
     for (size_t i = 0; i < b->count; i++) line_free(&b->lines[i]);
 
     if (b->cap < snap->line_count) {
-        b->lines = realloc(b->lines, snap->line_count * sizeof(Line));
+        Line *new_lines = realloc(b->lines, snap->line_count * sizeof(Line));
+        if (!new_lines) return;
+        b->lines = new_lines;
         b->cap = snap->line_count;
     }
     for (size_t i = 0; i < snap->line_count; i++) {
@@ -303,25 +248,19 @@ static void snapshot_restore(Editor *ed, const UndoSnapshot *snap) {
         line_set(&b->lines[i], snap->line_data[i], snap->line_len[i]);
     }
     b->count = snap->line_count;
-    /* We don't track whether this snapshot happens to exactly match the
-     * on-disk saved state, so conservatively mark dirty either way -- see
-     * the README's known-limitations note on this. */
     b->dirty = 1;
 
     ed->cur_line = snap->cur_line;
     ed->cur_col = snap->cur_col;
-    editor_selection_clear(ed); /* can't have a real one anyway: undo/redo are normal-mode only */
+    editor_selection_clear(ed);
     editor_clamp_cursor(ed);
 }
 
-/* Call immediately BEFORE a normal-mode command (or an insert-mode
- * session) mutates the buffer, to record what to go back to. */
 static void editor_checkpoint(Editor *ed) {
     UndoSnapshot snap;
     snapshot_capture(ed, &snap);
     undo_stack_push(&ed->undo_stack, &ed->undo_count, &ed->undo_cap, snap);
     undo_stack_trim(&ed->undo_stack, &ed->undo_count, UNDO_MAX_DEPTH);
-    /* Any new edit invalidates whatever could have been redone. */
     undo_stack_clear(&ed->redo_stack, &ed->redo_count, &ed->redo_cap);
 }
 
@@ -357,12 +296,13 @@ static void editor_redo(Editor *ed) {
     set_status(ed, "redo");
 }
 
-/* Appends `n` bytes to a growable buffer, reallocating as needed. */
 static void append_bytes(char **buf, size_t *len, size_t *cap, const char *src, size_t n) {
     if (*len + n > *cap) {
         size_t newcap = *cap ? *cap * 2 : 64;
         while (newcap < *len + n) newcap *= 2;
-        *buf = realloc(*buf, newcap);
+        char *new_buf = realloc(*buf, newcap);
+        if (!new_buf) _exit(1);
+        *buf = new_buf;
         *cap = newcap;
     }
     memcpy(*buf + *len, src, n);
@@ -380,35 +320,27 @@ int editor_get_selection_text(const Editor *ed, char **out_text, size_t *out_len
     size_t len = 0, cap = 0;
 
     if (fl == tl) {
-        Line *l = buffer_line(b, fl);
+        const Line *l = buffer_line(b, fl);
         append_bytes(&out, &len, &cap, l->data + fc, tc - fc);
     } else {
-        Line *first = buffer_line(b, fl);
+        const Line *first = buffer_line(b, fl);
         append_bytes(&out, &len, &cap, first->data + fc, first->len - fc);
         for (size_t i = fl + 1; i < tl; i++) {
             append_bytes(&out, &len, &cap, "\n", 1);
-            Line *mid = buffer_line(b, i);
+            const Line *mid = buffer_line(b, i);
             append_bytes(&out, &len, &cap, mid->data, mid->len);
         }
         append_bytes(&out, &len, &cap, "\n", 1);
-        Line *last = buffer_line(b, tl);
+        const Line *last = buffer_line(b, tl);
         append_bytes(&out, &len, &cap, last->data, tc);
     }
 
-    if (!out) out = malloc(1); /* empty selection: still return a valid pointer */
+    if (!out) out = malloc(1);
     *out_text = out;
     *out_len = len;
     return 1;
 }
 
-/* "yy": copies the current line (plus a trailing '\n', which is what marks
- * it as linewise for editor_paste_text's heuristic) into the yank
- * register. Doesn't touch X11 itself -- see the yank_dirty comment in
- * editor.h for why that's main.c's job. */
-/* Takes ownership of `text` (must be malloc'd), replacing whatever was
- * previously yanked, and flags main.c to claim CLIPBOARD ownership. Shared
- * by every yank/cut path (normal-mode 'yy', visual-mode y/d/x) so there's
- * one place that can't forget to set yank_dirty. */
 static void editor_set_yank(Editor *ed, char *text, size_t len) {
     free(ed->yank_text);
     ed->yank_text = text;
@@ -417,7 +349,7 @@ static void editor_set_yank(Editor *ed, char *text, size_t len) {
 }
 
 static void editor_yank_line(Editor *ed) {
-    Line *l = buffer_line(ed->buf, ed->cur_line);
+    const Line *l = buffer_line(ed->buf, ed->cur_line);
     char *copy = malloc(l->len + 1);
     memcpy(copy, l->data, l->len);
     copy[l->len] = '\n';
@@ -429,16 +361,13 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
     if (len == 0) return;
     Buffer *b = ed->buf;
 
-    editor_checkpoint(ed); /* one undo step for the whole paste, selection-replace included */
+    editor_checkpoint(ed);
 
     if (editor_has_selection(ed)) editor_delete_selection(ed);
 
     int linewise = (text[len - 1] == '\n');
 
     if (linewise) {
-        /* Insert each clipboard line as a whole new line below the cursor,
-         * vim-'p'-style. The final '\n' just terminates the last one -- it
-         * doesn't introduce a trailing empty line. */
         size_t line_start = 0;
         size_t insert_at = ed->cur_line + 1;
         size_t first_inserted = insert_at;
@@ -452,9 +381,6 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
         ed->cur_line = first_inserted;
         ed->cur_col = 0;
     } else {
-        /* Insert inline at the cursor, splitting the current line at each
-         * embedded newline (there's no trailing one here to treat as a
-         * whole-line marker). */
         size_t seg_start = 0;
         for (size_t i = 0; i <= len; i++) {
             if (i < len && text[i] != '\n') continue;
@@ -463,7 +389,7 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
             line_insert_bytes(l, ed->cur_col + 1, text + seg_start, i - seg_start);
             ed->cur_col += (i - seg_start);
 
-            if (i < len) { /* text[i] == '\n': split the line right here */
+            if (i < len) {
                 Line *cur = buffer_line(b, ed->cur_line);
                 size_t rest_len = cur->len - ed->cur_col;
                 buffer_insert_line(b, ed->cur_line + 1, cur->data + ed->cur_col, rest_len);
@@ -482,10 +408,10 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
 
 void editor_replace_buffer_text(Editor *ed, const char *text, size_t len) {
     editor_checkpoint(ed);
-    buffer_set_from_text(ed->buf, text, len); /* also sets b->dirty */
+    buffer_set_from_text(ed->buf, text, len);
     ed->cur_line = 0;
     ed->cur_col = 0;
-    editor_selection_clear(ed); /* whatever byte offsets it had are meaningless in new content */
+    editor_selection_clear(ed);
     if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
     editor_clamp_cursor(ed);
 }
@@ -498,9 +424,6 @@ void editor_yank_selection(Editor *ed) {
         editor_set_yank(ed, text_out, tlen);
         set_status(ed, "%zu bytes yanked", tlen);
     }
-    /* Deliberately nothing else: no cursor move, no mode change, no
-     * clearing the selection -- see the comment in editor.h on why this
-     * differs from visual-mode 'y'. */
 }
 
 void editor_cut_selection(Editor *ed) {
@@ -511,15 +434,11 @@ void editor_cut_selection(Editor *ed) {
         editor_set_yank(ed, text_out, tlen);
     }
     editor_checkpoint(ed);
-    editor_delete_selection(ed); /* repositions the cursor, clears the selection */
-    if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL; /* can't stay in visual with nothing selected */
+    editor_delete_selection(ed);
+    if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
     set_status(ed, "%zu bytes cut", tlen);
 }
 
-/* Shared by editor_run_command()'s user-command fallback (matched by
- * name) and editor_dispatch_leader_key() (matched by key) below -- one
- * place for the "is this actually runnable right now" check and the
- * mode-forcing, rather than duplicating it per trigger mechanism. */
 static void editor_request_user_command(Editor *ed, int index) {
     const XenoedCommand *cmd = &XENOED_COMMANDS[index];
 
@@ -527,10 +446,6 @@ static void editor_request_user_command(Editor *ed, int index) {
         set_status(ed, "E: %s needs a selection", cmd->name ? cmd->name : cmd->script);
         return;
     }
-    /* Consistent with visual-mode 'p': force normal mode BEFORE the
-     * request is even set, so by the time main.c applies whatever the
-     * script hands back, there's no stale visual selection left implying
-     * byte offsets that may no longer mean anything. */
     if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
 
     ed->user_command_index = index;
@@ -578,12 +493,7 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
 
 const char *const *editor_command_names(int *out_count) {
     static const char *const builtin[] = { "w", "q", "q!", "wq", "x" };
-    static const char *names[5 + 64]; /* 64 is a generous, arbitrary cap on
-                                        * user command count -- config.h's
-                                        * table is small by nature (hand-
-                                        * written, hand-bound to keys), so
-                                        * this just needs to not be the
-                                        * thing that runs out first. */
+    static const char *names[5 + 64];
     int n = 0;
     for (size_t i = 0; i < sizeof(builtin) / sizeof(builtin[0]) && n < 5 + 64; i++) {
         names[n++] = builtin[i];
@@ -595,9 +505,6 @@ const char *const *editor_command_names(int *out_count) {
     return names;
 }
 
-/* Called from handle_normal()/handle_visual() once XENOED_LEADER has been
- * seen and this is the following keypress. Silently ignores a key nothing
- * is bound to -- same as any other unrecognized key in either mode. */
 static void editor_dispatch_leader_key(Editor *ed, char key) {
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
         if (XENOED_COMMANDS[i].key != 0 && XENOED_COMMANDS[i].key == key) {
@@ -696,34 +603,17 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
                 editor_clamp_cursor(ed);
             }
             break;
-        case 'd':
-            ed->pending_op = 'd';
-            break;
-        case 'y':
-            ed->pending_op = 'y';
-            break;
-        case 'p':
-            /* Actual paste happens once main.c fetches CLIPBOARD content
-             * and calls editor_paste_text(), which checkpoints itself. */
-            ed->paste_requested = 1;
-            break;
-        case 'u':
-            editor_undo(ed);
-            break;
+        case 'd': ed->pending_op = 'd'; break;
+        case 'y': ed->pending_op = 'y'; break;
+        case 'p': ed->paste_requested = 1; break;
+        case 'u': editor_undo(ed); break;
         case 'v':
-            editor_selection_start(ed); /* anchor = the character currently under the cursor */
+            editor_selection_start(ed);
             ed->sel_inclusive = 1;
             ed->mode = MODE_VISUAL;
             break;
-        case XENOED_LEADER:
-            ed->leader_pending = 1;
-            break;
-        case ':':
-            /* No inline bar anymore -- main.c shows a dmenu picker and
-             * feeds the result to editor_run_command(). Stays in normal
-             * mode the whole time, same shape as 'p' -> paste_requested. */
-            ed->command_menu_requested = 1;
-            break;
+        case XENOED_LEADER: ed->leader_pending = 1; break;
+        case ':': ed->command_menu_requested = 1; break;
         case '/':
             ed->mode = MODE_SEARCH;
             ed->cmdlen = 0;
@@ -733,45 +623,31 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             if (ed->search_pattern[0] != '\0') {
                 ed->search_requested = 1;
                 ed->search_backward = 0;
-            } else {
-                set_status(ed, "E: no previous search");
-            }
+            } else set_status(ed, "E: no previous search");
             break;
         case 'N':
             if (ed->search_pattern[0] != '\0') {
                 ed->search_requested = 1;
                 ed->search_backward = 1;
-            } else {
-                set_status(ed, "E: no previous search");
-            }
+            } else set_status(ed, "E: no previous search");
             break;
-        default:
-            break;
+        default: break;
     }
 }
 
-/* Visual mode: movement extends the selection (the anchor set by 'v' stays
- * put; the cursor doubles as the selection's moving endpoint, exactly like
- * insert-mode Shift+arrow/mouse-drag selection already works), and y/d/x/p
- * act on the resulting span instead of a whole line or single character.
- * Deliberately minimal: no vim visual-mode extras like case-changing (real
- * vim's visual 'u' means something entirely different -- lowercase the
- * selection -- so 'u' is simply unbound here rather than risk that
- * confusion) or block/linewise visual variants, just enough to make y/d
- * work on an arbitrary span from normal mode. */
 static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text, int len) {
     if (special == EKEY_UP)    { move_vert(ed, -1); return; }
     if (special == EKEY_DOWN)  { move_vert(ed, +1); return; }
     if (special == EKEY_LEFT)  { move_left(ed); return; }
     if (special == EKEY_RIGHT) { move_right(ed); return; }
-    if (special != EKEY_NONE) { ed->leader_pending = 0; return; } /* nothing else is bound in visual mode */
+    if (special != EKEY_NONE) { ed->leader_pending = 0; return; }
     if (len < 1) return;
 
     char c = text[0];
 
     if (ed->leader_pending) {
         ed->leader_pending = 0;
-        editor_dispatch_leader_key(ed, c); /* may drop back to normal mode -- see editor_request_user_command() */
+        editor_dispatch_leader_key(ed, c);
         return;
     }
 
@@ -782,7 +658,7 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
         case 'k': move_vert(ed, -1); break;
         case '0': ed->cur_col = 0; break;
         case '$': {
-            Line *l = buffer_line(ed->buf, ed->cur_line);
+            const Line *l = buffer_line(ed->buf, ed->cur_line);
             ed->cur_col = (l->len == 0) ? 0 : utf8_prev_boundary(l->data, l->len);
             break;
         }
@@ -794,7 +670,6 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
                 editor_set_yank(ed, text_out, tlen);
                 set_status(ed, "%zu bytes yanked", tlen);
             }
-            /* vim: cursor lands at the start of what was selected. */
             size_t fl, fc, tl, tc;
             editor_selection_range(ed, &fl, &fc, &tl, &tc);
             ed->cur_line = fl;
@@ -806,23 +681,14 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
         }
         case 'd':
         case 'x':
-            editor_cut_selection(ed); /* also repositions cursor, clears selection, drops to normal mode */
+            editor_cut_selection(ed);
             break;
         case 'p':
-            /* Leave the selection active -- editor_paste_text() (called
-             * once main.c fetches CLIPBOARD content) replaces whatever's
-             * currently selected before inserting, same as it already does
-             * for insert-mode selections. Its own editor_checkpoint() call
-             * covers this as one undo step. */
             ed->mode = MODE_NORMAL;
             ed->paste_requested = 1;
             break;
-        case XENOED_LEADER:
-            ed->leader_pending = 1;
-            break;
-
-        default:
-            break;
+        case XENOED_LEADER: ed->leader_pending = 1; break;
+        default: break;
     }
 }
 
@@ -833,9 +699,6 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     size_t prev = 0;
     size_t next = 0;
 
-    /* Shift+arrow extends (or starts) the selection; the anchor stays put
-     * and the cursor -- which doubles as the selection's moving endpoint --
-     * just moves normally. Plain arrows collapse any active selection. */
     switch (special) {
         case EKEY_SHIFT_LEFT:
             if (!ed->sel_active) editor_selection_start(ed);
@@ -854,20 +717,18 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
             move_vert(ed, +1);
             return;
         case EKEY_LEFT:
-            /*prev = utf8_prev_boundary(l->data, ed->cur_col);*/
-            /*next = utf8_next_boundary(l->data, l->len, ed->cur_col);*/
-            printf("prev: %ld\tnext: %ld\n", prev, next);
-
+            prev = utf8_prev_boundary(l->data, ed->cur_col);
+            next = utf8_next_boundary(l->data, l->len, ed->cur_col);
+            (void)prev;
+            (void)next;
             editor_selection_clear(ed);
             move_left(ed);
             return;
         case EKEY_RIGHT:
             prev = utf8_prev_boundary(l->data, ed->cur_col);
             next = utf8_next_boundary(l->data, l->len, ed->cur_col);
-        int n = utf8_seq_len(l->data[next]);
-        printf("%s\n", l->data);
-            printf("prev: %ld\tnext: %ld\tn: %d\n", prev, next, n);
-
+            (void)prev;
+            (void)next;
             editor_selection_clear(ed);
             move_right(ed);
             return;
@@ -883,20 +744,17 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
             break;
     }
 
-    /* Any actual edit (Enter, Backspace, or typing) replaces an active
-     * selection first, same as a typical GUI text editor. */
     int is_edit = (special == EKEY_RETURN || special == EKEY_BACKSPACE ||
                    special == EKEY_DELETE || (special == EKEY_NONE && len >= 1));
     if (is_edit && editor_has_selection(ed)) {
         editor_delete_selection(ed);
-        l = buffer_line(b, ed->cur_line); /* buffer may have been mutated */
-        if (special == EKEY_DELETE || special == EKEY_BACKSPACE) return; /* Backspace-on-selection just deletes it */
+        l = buffer_line(b, ed->cur_line);
+        if (special == EKEY_DELETE || special == EKEY_BACKSPACE) return;
     }
 
     if (special == EKEY_RETURN) {
         size_t rest_len = l->len - ed->cur_col;
         buffer_insert_line(b, ed->cur_line + 1, l->data + ed->cur_col, rest_len);
-        /* buffer_insert_line may have reallocated b->lines; re-fetch l */
         l = buffer_line(b, ed->cur_line);
         line_delete_bytes(l, ed->cur_col, rest_len);
         ed->cur_line++;
@@ -907,9 +765,9 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
 
     if (special == EKEY_BACKSPACE) {
         if (ed->cur_col > 0) {
-            size_t prev = utf8_prev_boundary(l->data, ed->cur_col);
-            line_delete_bytes(l, prev, ed->cur_col - prev);
-            ed->cur_col = prev;
+            size_t prev_col = utf8_prev_boundary(l->data, ed->cur_col);
+            line_delete_bytes(l, prev_col, ed->cur_col - prev_col);
+            ed->cur_col = prev_col;
             b->dirty = 1;
         } else if (ed->cur_line > 0) {
             Line *prevline = buffer_line(b, ed->cur_line - 1);
@@ -926,12 +784,11 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     if (special == EKEY_DELETE) {
         if (l->len > 0) {
             editor_checkpoint(ed);
-            size_t next = utf8_next_boundary(l->data, l->len, ed->cur_col);
-            line_delete_bytes(l, ed->cur_col, next - ed->cur_col);
+            size_t next_col = utf8_next_boundary(l->data, l->len, ed->cur_col);
+            line_delete_bytes(l, ed->cur_col, next_col - ed->cur_col);
             b->dirty = 1;
             editor_clamp_cursor(ed);
         }
-
         return;
     }
 
@@ -939,7 +796,7 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     if (len < 1) return;
 
     unsigned char c0 = (unsigned char)text[0];
-    if (c0 < 0x20 && c0 != '\t') return; /* swallow stray control chars */
+    if (c0 < 0x20 && c0 != '\t') return;
     if (c0 == 0x7F) return;
 
     line_insert_bytes(l, ed->cur_col, text, len);
@@ -947,10 +804,6 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     b->dirty = 1;
 }
 
-/* Same small "type into cmdline, Enter commits, Backspace/Esc cancel"
- * shape used to be shared with handle_command() for the ':' bar, before
- * that got replaced by the dmenu-based command picker -- this is the only
- * one left using it now, for '/' search patterns. */
 static void handle_search(Editor *ed, EditorSpecialKey special, const char *text, int len) {
     if (special == EKEY_RETURN) {
         if (ed->cmdlen > 0) {
@@ -989,13 +842,13 @@ void editor_handle_key(Editor *ed, EditorSpecialKey special, const char *text, i
     if (special == EKEY_ESCAPE) {
         if (ed->mode == MODE_INSERT) {
             ed->mode = MODE_NORMAL;
-            move_left(ed); /* vim: leaving insert steps cursor back one */
+            move_left(ed);
             editor_clamp_cursor(ed);
         } else if (ed->mode == MODE_SEARCH) {
             ed->mode = MODE_NORMAL;
             ed->cmdlen = 0;
         } else if (ed->mode == MODE_VISUAL) {
-            ed->mode = MODE_NORMAL; /* cancels the selection, changes nothing */
+            ed->mode = MODE_NORMAL;
         }
         editor_selection_clear(ed);
         ed->pending_op = 0;
