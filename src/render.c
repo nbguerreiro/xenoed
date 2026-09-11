@@ -1,5 +1,6 @@
 #include "render.h"
 #include "utf8.h"
+#include "config.h"
 #include <pango/pangocairo.h>
 #include <string.h>
 #include <stdio.h>
@@ -61,7 +62,7 @@ void render_init(RenderState *rs, PangoFontDescription *font_desc) {
     cairo_surface_destroy(tmp);
 
     rs->ascent = ascent;
-    rs->row_height = (int)((ascent + descent) * 1.25);
+    rs->row_height = (int)((ascent + descent) * XENOED_LINE_SPACING);
     if (rs->row_height < ascent + descent) rs->row_height = ascent + descent;
 }
 

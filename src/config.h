@@ -19,6 +19,15 @@
 #define XENOED_FONT_BAR "Sans 11"
 #endif
 
+/* Multiplier applied to the font's ascent+descent to determine the editor
+ * row height. The previous value was 1.25; 1.50 is therefore about 120% of
+ * that spacing. Override this at compile time if desired, for example:
+ *   make EXTRA_CFLAGS='-DXENOED_LINE_SPACING=1.35'
+ */
+#ifndef XENOED_LINE_SPACING
+#define XENOED_LINE_SPACING 1.50
+#endif
+
 /* --- External commands -------------------------------------------------
  *
  * A compile-time table of external scripts, each optionally reachable from
