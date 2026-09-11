@@ -115,7 +115,7 @@ static void editor_delete_selection(Editor *ed) {
         line_delete_bytes(l, fc, tc - fc);
     } else {
         Line *first = buffer_line(b, fl);
-        Line *last = buffer_line(b, tl);
+        const Line *last = buffer_line(b, tl);
         size_t tail_len = last->len - tc;
         line_delete_bytes(first, fc, first->len - fc);
         line_insert_bytes(first, first->len, last->data + tc, tail_len);
@@ -561,7 +561,6 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
         case 'k': move_vert(ed, -1); break;
         case '0': ed->cur_col = 0; break;
         case '$': ed->cur_col = (l->len == 0) ? 0 : utf8_prev_boundary(l->data, l->len); break;
-
         case 'i': editor_checkpoint(ed); ed->mode = MODE_INSERT; break;
         case 'a':
             editor_checkpoint(ed);
@@ -662,7 +661,6 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
             ed->cur_col = (l->len == 0) ? 0 : utf8_prev_boundary(l->data, l->len);
             break;
         }
-
         case 'y': {
             char *text_out = NULL;
             size_t tlen = 0;
