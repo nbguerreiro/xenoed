@@ -8,3 +8,4 @@
 - [x] 6. Add a `.` command to repeat the last used command
 - [x] 7. Accept an optional line-number argument at startup and jump immediately to that line
 - [x] 8. Replace the editor's search prompt with dmenu for a more consistent command/search interface
+- [ ] 9. Make search case-insensitive
