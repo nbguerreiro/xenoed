@@ -93,9 +93,12 @@ static void replay(Editor *ed) {
 }
 
 static char *run_search_dmenu(void) {
-    int inpipe[2], outpipe[2];
-    if (pipe(inpipe) != 0 || pipe(outpipe) != 0) {
-        if (inpipe[0] >= 0) { close(inpipe[0]); close(inpipe[1]); }
+    int inpipe[2];
+    int outpipe[2];
+    if (pipe(inpipe) != 0) return NULL;
+    if (pipe(outpipe) != 0) {
+        close(inpipe[0]);
+        close(inpipe[1]);
         return NULL;
     }
 
