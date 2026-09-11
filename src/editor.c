@@ -392,15 +392,15 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
         ed->cur_col = 0;
     } else {
         size_t seg_start = 0;
-        Line *l = buffer_line(b, ed->cur_line);
+        const Line *l = buffer_line(b, ed->cur_line);
         size_t paste_col = (insert_mode || paste_before_requested)
                        ? ed->cur_col
                        : utf8_next_boundary(l->data, l->len, ed->cur_col);
         for (size_t i = 0; i <= len; i++) {
             if (i < len && text[i] != '\n') continue;
 
-            Line *l = buffer_line(b, ed->cur_line);
-            line_insert_bytes(l, paste_col, text + seg_start, i - seg_start);
+            Line *paste_line = buffer_line(b, ed->cur_line);
+            line_insert_bytes(paste_line, paste_col, text + seg_start, i - seg_start);
             paste_col += (i - seg_start);
             ed->cur_col = insert_mode ? paste_col : paste_col - 1;
 
