@@ -364,6 +364,7 @@ static void editor_yank_line(Editor *ed) {
 void editor_paste_text(Editor *ed, const char *text, size_t len) {
     if (len == 0) return;
     Buffer *b = ed->buf;
+    int insert_mode = (ed->mode == MODE_INSERT);
 
     editor_checkpoint(ed);
 
@@ -386,20 +387,23 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
         ed->cur_col = 0;
     } else {
         size_t seg_start = 0;
+        size_t paste_col = ed->cur_col + (insert_mode ? 0 : 1);
         for (size_t i = 0; i <= len; i++) {
             if (i < len && text[i] != '\n') continue;
 
             Line *l = buffer_line(b, ed->cur_line);
-            line_insert_bytes(l, ed->cur_col + 1, text + seg_start, i - seg_start);
-            ed->cur_col += (i - seg_start);
+            line_insert_bytes(l, paste_col, text + seg_start, i - seg_start);
+            paste_col += (i - seg_start);
+            ed->cur_col = insert_mode ? paste_col : paste_col - 1;
 
             if (i < len) {
                 Line *cur = buffer_line(b, ed->cur_line);
-                size_t rest_len = cur->len - ed->cur_col;
-                buffer_insert_line(b, ed->cur_line + 1, cur->data + ed->cur_col, rest_len);
+                size_t rest_len = cur->len - paste_col;
+                buffer_insert_line(b, ed->cur_line + 1, cur->data + paste_col, rest_len);
                 cur = buffer_line(b, ed->cur_line);
-                line_delete_bytes(cur, ed->cur_col, rest_len);
+                line_delete_bytes(cur, paste_col, rest_len);
                 ed->cur_line++;
+                paste_col = 0;
                 ed->cur_col = 0;
             }
             seg_start = i + 1;
@@ -476,8 +480,8 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
     } else if (strncmp(cmd, "w ", 2) == 0) {
         const char *path = cmd + 2;
         while (*path == ' ') path++;
-        if (buffer_save(b, path) == 0) set_status(ed, "\"%s\" written", path);
-        else set_status(ed, "E: could not write %s", path);
+        if (buffer_save(b, path) == 0) set_status(ed, "\"%s\" written", b->filename);
+        else set_status(ed, "E: could not write %s", b->filename);
     } else if (strcmp(cmd, "wq") == 0 || strcmp(cmd, "x") == 0) {
         if (!b->filename) { set_status(ed, "E: no file name (use :w <path> first)"); }
         else if (buffer_save(b, NULL) == 0) ed->want_quit = 1;
@@ -746,6 +750,18 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
             break;
     }
 
+    if (special == EKEY_NONE && len >= 1) {
+        unsigned char c0 = (unsigned char)text[0];
+        if (c0 == 0x18) {
+            editor_cut_selection(ed);
+            return;
+        }
+        if (c0 == 0x03) {
+            editor_yank_selection(ed);
+            return;
+        }
+    }
+
     int is_edit = (special == EKEY_RETURN || special == EKEY_BACKSPACE ||
                    special == EKEY_DELETE || (special == EKEY_NONE && len >= 1));
     if (is_edit && editor_has_selection(ed)) {
@@ -798,6 +814,10 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     if (len < 1) return;
 
     unsigned char c0 = (unsigned char)text[0];
+    if (c0 == 0x16) {
+        ed->paste_requested = 1;
+        return;
+    }
     if (c0 < 0x20 && c0 != '\t') return;
     if (c0 == 0x7F) return;
 
