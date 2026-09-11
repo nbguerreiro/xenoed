@@ -629,6 +629,7 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
         ed->pending_op = 0;
         if (c == op) {
             if (op == 'd') {
+                editor_yank_line(ed);
                 editor_checkpoint(ed);
                 Buffer *b = ed->buf;
                 buffer_remove_line(b, ed->cur_line);
@@ -829,6 +830,9 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     Buffer *b = ed->buf;
     Line *l = buffer_line(b, ed->cur_line);
 
+    size_t prev = 0;
+    size_t next = 0;
+
     /* Shift+arrow extends (or starts) the selection; the anchor stays put
      * and the cursor -- which doubles as the selection's moving endpoint --
      * just moves normally. Plain arrows collapse any active selection. */
@@ -850,10 +854,20 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
             move_vert(ed, +1);
             return;
         case EKEY_LEFT:
+            /*prev = utf8_prev_boundary(l->data, ed->cur_col);*/
+            /*next = utf8_next_boundary(l->data, l->len, ed->cur_col);*/
+            printf("prev: %ld\tnext: %ld\n", prev, next);
+
             editor_selection_clear(ed);
             move_left(ed);
             return;
         case EKEY_RIGHT:
+            prev = utf8_prev_boundary(l->data, ed->cur_col);
+            next = utf8_next_boundary(l->data, l->len, ed->cur_col);
+        int n = utf8_seq_len(l->data[next]);
+        printf("%s\n", l->data);
+            printf("prev: %ld\tnext: %ld\tn: %d\n", prev, next, n);
+
             editor_selection_clear(ed);
             move_right(ed);
             return;
@@ -906,6 +920,18 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
             ed->cur_col = join_col;
             b->dirty = 1;
         }
+        return;
+    }
+
+    if (special == EKEY_DELETE) {
+        if (l->len > 0) {
+            editor_checkpoint(ed);
+            size_t next = utf8_next_boundary(l->data, l->len, ed->cur_col);
+            line_delete_bytes(l, ed->cur_col, next - ed->cur_col);
+            b->dirty = 1;
+            editor_clamp_cursor(ed);
+        }
+
         return;
     }
 
