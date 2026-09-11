@@ -35,8 +35,10 @@
 #define SELECTION_B 0.20
 #define SELECTION_A 0.35
 
-void render_init(RenderState *rs, PangoFontDescription *font_desc) {
+void render_init(RenderState *rs, PangoFontDescription *font_desc,
+                 PangoFontDescription *bar_font_desc) {
     rs->font_desc = font_desc;
+    rs->bar_font_desc = bar_font_desc;
     rs->padding = 6;
 
     cairo_surface_t *tmp = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
@@ -153,36 +155,27 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
     }
 
     int status_y = visible_rows * rs->row_height;
-    cairo_set_source_rgb(cr, STATUSFG_R, STATUSFG_G, STATUSFG_B);
-    cairo_rectangle(cr, 0, status_y, width, 1);
-    cairo_fill(cr);
 
     char line_text[512];
     if (ed->mode == MODE_SEARCH) {
         snprintf(line_text, sizeof(line_text), "/%s", ed->cmdline);
+    } else if (ed->status[0]) {
+        snprintf(line_text, sizeof(line_text), "%s", ed->status);
     } else {
-        const char *mode_name = ed->mode == MODE_INSERT ? "INSERT"
-                               : ed->mode == MODE_VISUAL ? "VISUAL"
-                               : "NORMAL";
-        const char *fname = buf->filename ? buf->filename : "[No Name]";
-        const char *dirty = buf->dirty ? " [+]" : "";
-        if (ed->status[0]) {
-            snprintf(line_text, sizeof(line_text), "-- %s -- %s%s  %s",
-                      mode_name, fname, dirty, ed->status);
-        } else {
-            snprintf(line_text, sizeof(line_text), "-- %s -- %s%s  Ln %zu, Col %zu",
-                      mode_name, fname, dirty, ed->cur_line + 1,
-                      1 + (size_t)g_utf8_strlen(buffer_line(buf, ed->cur_line)->data,
-                                                 (glong)ed->cur_col));
-        }
+        snprintf(line_text, sizeof(line_text), "%zu/%zu", ed->cur_line + 1, buf->count);
     }
 
-    PangoFontDescription *bar_font_desc = pango_font_description_from_string(XENOED_FONT_BAR);
     PangoLayout *status_layout = pango_cairo_create_layout(cr);
-    pango_layout_set_font_description(status_layout, bar_font_desc);
+    pango_layout_set_font_description(status_layout, rs->bar_font_desc);
     pango_layout_set_text(status_layout, line_text, -1);
+
+    int text_width = 0;
+    pango_layout_get_pixel_size(status_layout, &text_width, NULL);
+    int status_x = width - rs->padding - text_width;
+    if (status_x < rs->padding) status_x = rs->padding;
+
     cairo_set_source_rgb(cr, STATUSFG_R, STATUSFG_G, STATUSFG_B);
-    cairo_move_to(cr, rs->padding, status_y);
+    cairo_move_to(cr, status_x, status_y);
     pango_cairo_show_layout(cr, status_layout);
 
     if (ed->mode == MODE_SEARCH) {
@@ -190,7 +183,6 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
     }
 
     g_object_unref(status_layout);
-    pango_font_description_free(bar_font_desc);
     cairo_destroy(cr);
 }
 
