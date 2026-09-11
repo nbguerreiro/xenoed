@@ -65,7 +65,7 @@ void render_init(RenderState *rs, PangoFontDescription *font_desc) {
     if (rs->row_height < ascent + descent) rs->row_height = ascent + descent;
 }
 
-int render_visible_rows(const RenderState *rs, int height) {
+int render_visible_rows(RenderState *rs, int height) {
     int usable = height - rs->row_height;
     if (usable < 0) usable = 0;
     int rows = usable / rs->row_height;
