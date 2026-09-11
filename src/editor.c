@@ -392,7 +392,10 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
         ed->cur_col = 0;
     } else {
         size_t seg_start = 0;
-        size_t paste_col = (insert_mode || paste_before_requested) ? ed->cur_col : ed->cur_col + 1;
+        Line *l = buffer_line(b, ed->cur_line);
+        size_t paste_col = (insert_mode || paste_before_requested)
+                       ? ed->cur_col
+                       : utf8_next_boundary(l->data, l->len, ed->cur_col);
         for (size_t i = 0; i <= len; i++) {
             if (i < len && text[i] != '\n') continue;
 
