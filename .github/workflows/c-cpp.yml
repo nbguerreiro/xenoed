@@ -38,7 +38,8 @@ jobs:
             libcairo2-dev \
             libpango1.0-dev \
             libgdk-pixbuf-2.0-dev \
-            libx11-dev
+            libx11-dev \
+            cppcheck
 
       - name: Build
         run: make clean all
@@ -57,6 +58,7 @@ jobs:
           - undefined
           - thread
     env:
+      CC: gcc
       CFLAGS: -std=c11 -O1 -g -Wall -Wextra -fno-omit-frame-pointer -fsanitize=${{ matrix.sanitizer }}
       LDFLAGS: -fsanitize=${{ matrix.sanitizer }}
     steps:
@@ -73,7 +75,7 @@ jobs:
             libx11-dev
 
       - name: Build
-        run: make clean all
+        run: make clean all CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
 
   static-analysis:
     name: Static analysis
@@ -89,7 +91,9 @@ jobs:
             libcairo2-dev \
             libpango1.0-dev \
             libgdk-pixbuf-2.0-dev \
-            libx11-dev             cppcheck             clang-tools
+            libx11-dev \
+            cppcheck \
+            clang-tools
 
       - name: Build with Clang analyzer
         run: |
@@ -110,12 +114,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: cppcheck
-        run: |
-          cppcheck \
-            --enable=warning,style,performance,portability \
-            --error-exitcode=1 \
-            --inline-suppr \
-            fm.c
+        run: make lint
 
   artifact:
     name: Build artifact
@@ -137,9 +136,9 @@ jobs:
       - name: Build
         run: make clean all
 
-      - name: Upload fm binary
+      - name: Upload xenoed binary
         uses: actions/upload-artifact@v4
         with:
-          name: fm-linux-x86_64
-          path: fm
+          name: xenoed-linux-x86_64
+          path: xenoed
           if-no-files-found: error
