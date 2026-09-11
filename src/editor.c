@@ -476,7 +476,7 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
     if (cmd[0] == '\0') {
         return;
     } else if (strcmp(cmd, "q") == 0) {
-        if (b->dirty) set_status(ed, "E: unsaved changes (:q! to discard");
+        if (b->dirty) set_status(ed, "E: unsaved changes (:q! to discard)");
         else ed->want_quit = 1;
     } else if (strcmp(cmd, "q!") == 0) {
         ed->want_quit = 1;
