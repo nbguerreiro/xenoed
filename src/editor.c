@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void undo_stack_clear(UndoSnapshot **stack, size_t *count, size_t *cap);
 
