@@ -97,7 +97,7 @@ jobs:
 
       - name: Build with Clang analyzer
         run: |
-          scan-build make clean all
+          scan-build --status-bugs make clean all
 
       - name: Save analyzer report
         if: always()
