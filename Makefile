@@ -31,7 +31,7 @@ fanalyzer: CFLAGS += -g -O1 -fanalyzer
 
 sanitize: CFLAGS += -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
 
-SRC := src/main.c src/editor.c src/buffer.c src/render.c
+SRC := src/main.c src/editor.c src/buffer.c src/render.c src/repeat.c
 
 all: main
 debug: main
@@ -39,7 +39,7 @@ sanitize: main
 fanalyzer: main
 
 main: $(SRC)
-	$(CC) -o $(BIN) $(SRC) $(CFLAGS) $(LDFLAGS) 2>&1 | tee out.log;
+	$(CC) -o $(BIN) $(SRC) $(CFLAGS) $(LDFLAGS) -Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key 2>&1 | tee out.log;
 
 lint:
 	cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr $(SRC)
@@ -52,6 +52,6 @@ install:
 	chmod 755 ${HOME}/.local/bin/xenoed
 
 uninstall:
-	rm ${HOME}/.local/bin/xenoed
+	rm ${BIN} ${HOME}/.local/bin/xenoed
 
 
