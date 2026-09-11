@@ -35,10 +35,8 @@
 #define SELECTION_B 0.20
 #define SELECTION_A 0.35
 
-void render_init(RenderState *rs, PangoFontDescription *font_desc,
-                 PangoFontDescription *bar_font_desc) {
+void render_init(RenderState *rs, PangoFontDescription *font_desc) {
     rs->font_desc = font_desc;
-    rs->bar_font_desc = bar_font_desc;
     rs->padding = 6;
 
     cairo_surface_t *tmp = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
@@ -179,8 +177,9 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         }
     }
 
+    PangoFontDescription *bar_font_desc = pango_font_description_from_string(XENOED_FONT_BAR);
     PangoLayout *status_layout = pango_cairo_create_layout(cr);
-    pango_layout_set_font_description(status_layout, rs->bar_font_desc);
+    pango_layout_set_font_description(status_layout, bar_font_desc);
     pango_layout_set_text(status_layout, line_text, -1);
     cairo_set_source_rgb(cr, STATUSFG_R, STATUSFG_G, STATUSFG_B);
     cairo_move_to(cr, rs->padding, status_y);
@@ -191,6 +190,7 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
     }
 
     g_object_unref(status_layout);
+    pango_font_description_free(bar_font_desc);
     cairo_destroy(cr);
 }
 
