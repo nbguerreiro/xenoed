@@ -746,6 +746,18 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
             break;
     }
 
+    if (special == EKEY_NONE && len >= 1) {
+        unsigned char c0 = (unsigned char)text[0];
+        if (c0 == 0x18) {
+            editor_cut_selection(ed);
+            return;
+        }
+        if (c0 == 0x03) {
+            editor_yank_selection(ed);
+            return;
+        }
+    }
+
     int is_edit = (special == EKEY_RETURN || special == EKEY_BACKSPACE ||
                    special == EKEY_DELETE || (special == EKEY_NONE && len >= 1));
     if (is_edit && editor_has_selection(ed)) {
@@ -798,14 +810,6 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     if (len < 1) return;
 
     unsigned char c0 = (unsigned char)text[0];
-    if (c0 == 0x18) {
-        editor_cut_selection(ed);
-        return;
-    }
-    if (c0 == 0x03) {
-        editor_yank_selection(ed);
-        return;
-    }
     if (c0 == 0x16) {
         ed->paste_requested = 1;
         return;
