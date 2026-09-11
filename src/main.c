@@ -35,6 +35,7 @@ typedef struct {
 static void backbuffer_create(Backbuffer *bb, int width, int height) {
     bb->pixmap = XCreatePixmap(bb->dpy, bb->win, (unsigned)width, (unsigned)height, (unsigned)bb->depth);
     bb->surface = cairo_xlib_surface_create(bb->dpy, bb->pixmap, bb->visual, width, height);
+    XSetWindowBackgroundPixmap(bb->dpy, bb->win, bb->pixmap);
     bb->width = width;
     bb->height = height;
 }
@@ -46,8 +47,10 @@ static void backbuffer_destroy(Backbuffer *bb) {
 
 static void backbuffer_resize(Backbuffer *bb, int width, int height) {
     if (width == bb->width && height == bb->height) return;
-    backbuffer_destroy(bb);
+    cairo_surface_destroy(bb->surface);
+    Pixmap old_pixmap = bb->pixmap;
     backbuffer_create(bb, width, height);
+    XFreePixmap(bb->dpy, old_pixmap);
 }
 
 static void backbuffer_present(Backbuffer *bb) {
