@@ -61,14 +61,12 @@ void render_init(RenderState *rs, PangoFontDescription *font_desc) {
     cairo_surface_destroy(tmp);
 
     rs->ascent = ascent;
-    /* A little vertical breathing room beyond raw ascent+descent reads much
-     * better, especially for proportional fonts with tall glyphs/diacritics. */
     rs->row_height = (int)((ascent + descent) * 1.25);
     if (rs->row_height < ascent + descent) rs->row_height = ascent + descent;
 }
 
-int render_visible_rows(RenderState *rs, int height) {
-    int usable = height - rs->row_height; /* reserve bottom row for status */
+int render_visible_rows(const RenderState *rs, int height) {
+    int usable = height - rs->row_height;
     if (usable < 0) usable = 0;
     int rows = usable / rs->row_height;
     return rows < 1 ? 1 : rows;
@@ -76,17 +74,12 @@ int render_visible_rows(RenderState *rs, int height) {
 
 static void draw_cursor(cairo_t *cr, RenderState *rs, PangoLayout *layout,
                          size_t byte_index, int row_y, int fallback_w, int block_mode) {
-    /* index_to_pos (not get_cursor_pos) gives the logical extents of the
-     * character/cluster AT byte_index -- its x AND its actual on-screen
-     * width -- which is what we want for a block cursor that should match
-     * the rendered width of the glyph underneath it. get_cursor_pos, by
-     * contrast, describes the caret's own shape (width ~0), not the glyph. */
     PangoRectangle rect;
     pango_layout_index_to_pos(layout, (int)byte_index, &rect);
 
     int cx = rs->padding + rect.x / PANGO_SCALE;
     int cw = rect.width / PANGO_SCALE;
-    if (cw <= 0) cw = fallback_w; /* end of line / zero-width position */
+    if (cw <= 0) cw = fallback_w;
 
     if (block_mode) {
         cairo_set_source_rgba(cr, CURSOR_R, CURSOR_G, CURSOR_B, 0.45);
@@ -99,22 +92,18 @@ static void draw_cursor(cairo_t *cr, RenderState *rs, PangoLayout *layout,
     }
 }
 
-static int layout_x_at(RenderState *rs, PangoLayout *layout, size_t byte_index) {
+static int layout_x_at(const RenderState *rs, PangoLayout *layout, size_t byte_index) {
     PangoRectangle rect;
     pango_layout_index_to_pos(layout, (int)byte_index, &rect);
     return rs->padding + rect.x / PANGO_SCALE;
 }
 
-/* Draws the selection background for one visible row. `is_first`/`is_last`
- * say whether this row is where the selection starts/ends (both, for a
- * single-line selection; neither, for a fully-selected middle row -- in
- * which case the whole row width is highlighted). */
 static void draw_selection_row(cairo_t *cr, RenderState *rs, PangoLayout *layout,
                                 int row_y, int width, size_t from_col, size_t to_col,
                                 int is_first, int is_last) {
     int x_from = is_first ? layout_x_at(rs, layout, from_col) : rs->padding;
     int x_to   = is_last  ? layout_x_at(rs, layout, to_col)   : width;
-    if (x_to <= x_from) x_to = x_from + 2; /* keep empty selected lines visible */
+    if (x_to <= x_from) x_to = x_from + 2;
 
     cairo_set_source_rgba(cr, SELECTION_R, SELECTION_G, SELECTION_B, SELECTION_A);
     cairo_rectangle(cr, x_from, row_y, x_to - x_from, rs->row_height);
@@ -123,8 +112,6 @@ static void draw_selection_row(cairo_t *cr, RenderState *rs, PangoLayout *layout
 
 void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int width, int height) {
     cairo_t *cr = cairo_create(surface);
-
-    /* Background */
     cairo_set_source_rgb(cr, BG_R, BG_G, BG_B);
     cairo_paint(cr);
 
@@ -170,7 +157,6 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         g_object_unref(layout);
     }
 
-    /* Status / command bar */
     int status_y = visible_rows * rs->row_height;
     cairo_set_source_rgb(cr, STATUSBG_R, STATUSBG_G, STATUSBG_B);
     cairo_rectangle(cr, 0, status_y, width, rs->row_height);
@@ -208,7 +194,6 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
     }
 
     g_object_unref(status_layout);
-
     cairo_destroy(cr);
 }
 
@@ -218,7 +203,7 @@ int render_xy_to_pos(RenderState *rs, cairo_surface_t *surface, Editor *ed,
     (void)width;
     int visible_rows = render_visible_rows(rs, height);
     int status_y = visible_rows * rs->row_height;
-    if (y >= status_y) return 0; /* click landed in the status/command bar */
+    if (y >= status_y) return 0;
 
     int row = y / rs->row_height;
     if (row < 0) row = 0;
@@ -227,7 +212,6 @@ int render_xy_to_pos(RenderState *rs, cairo_surface_t *surface, Editor *ed,
     Buffer *buf = ed->buf;
     size_t line_idx = ed->top_line + (size_t)row;
     if (line_idx >= buf->count) {
-        /* Clicked below the last line: snap to the very end of the buffer. */
         line_idx = buf->count - 1;
         *out_line = line_idx;
         *out_col = buffer_line(buf, line_idx)->len;
@@ -246,9 +230,6 @@ int render_xy_to_pos(RenderState *rs, cairo_surface_t *surface, Editor *ed,
     int index = 0, trailing = 0;
     pango_layout_xy_to_index(layout, x_rel * PANGO_SCALE, 0, &index, &trailing);
     size_t col = (size_t)index;
-    /* `trailing` is nonzero if the click landed past the midpoint of the
-     * character at `index` -- snap to the far side of it in that case, so
-     * clicking the right half of a wide character lands after it. */
     if (trailing > 0) col = utf8_next_boundary(l->data, l->len, col);
     if (col > l->len) col = l->len;
 
