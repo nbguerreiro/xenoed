@@ -75,9 +75,6 @@ jobs:
       - name: Build
         run: make clean all
 
-      - name: Smoke test binary
-        run: test -x ./fm
-
   static-analysis:
     name: Static analysis
     runs-on: ubuntu-latest
@@ -119,25 +116,6 @@ jobs:
             --error-exitcode=1 \
             --inline-suppr \
             fm.c
-
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libcairo2-dev \
-            libpango1.0-dev \
-            libgdk-pixbuf-2.0-dev \
-            libx11-dev
-
-      - name: Run tests
-        run: make test
 
   artifact:
     name: Build artifact

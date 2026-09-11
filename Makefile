@@ -15,7 +15,7 @@ CFLAGS += -D_FORTIFY_SOURCE=3 -fstack-protector-all
 CFLAGS += $(C) $(L)
 CFLAGS += -DDEBUG=0
 
-BIN := out
+BIN := xenoed
 
 debug: CFLAGS := -ggdb3 \
 	-pedantic -W -Wall -Wstrict-prototypes -Wunreachable-code  \
