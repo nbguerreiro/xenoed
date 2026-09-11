@@ -392,12 +392,15 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
         ed->cur_col = 0;
     } else {
         size_t seg_start = 0;
-        size_t paste_col = (insert_mode || paste_before_requested) ? ed->cur_col : ed->cur_col + 1;
+        const Line *l = buffer_line(b, ed->cur_line);
+        size_t paste_col = (insert_mode || paste_before_requested)
+                       ? ed->cur_col
+                       : utf8_next_boundary(l->data, l->len, ed->cur_col);
         for (size_t i = 0; i <= len; i++) {
             if (i < len && text[i] != '\n') continue;
 
-            Line *l = buffer_line(b, ed->cur_line);
-            line_insert_bytes(l, paste_col, text + seg_start, i - seg_start);
+            Line *paste_line = buffer_line(b, ed->cur_line);
+            line_insert_bytes(paste_line, paste_col, text + seg_start, i - seg_start);
             paste_col += (i - seg_start);
             ed->cur_col = insert_mode ? paste_col : paste_col - 1;
 
@@ -621,10 +624,14 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             if (l->len > 0) {
                 editor_checkpoint(ed);
                 size_t next = utf8_next_boundary(l->data, l->len, ed->cur_col);
+                char *copy = malloc(next - ed->cur_col);
+                memcpy(copy, l->data + ed->cur_col, next - ed->cur_col);
+                editor_set_yank(ed, copy, next - ed->cur_col);
                 line_delete_bytes(l, ed->cur_col, next - ed->cur_col);
                 b->dirty = 1;
                 editor_clamp_cursor(ed);
             }
+
             break;
         case 'd': ed->pending_op = 'd'; break;
         case 'y': ed->pending_op = 'y'; break;
