@@ -93,6 +93,23 @@ static void replay(Editor *ed) {
     replaying = 0;
 }
 
+static Window top_level_window(Display *dpy, Window win) {
+    Window root = DefaultRootWindow(dpy);
+    Window parent = None;
+    Window *children = NULL;
+    unsigned int child_count = 0;
+
+    while (win != root && win != None) {
+        Window next = None;
+        if (!XQueryTree(dpy, win, &root, &next, &children, &child_count)) break;
+        if (children) XFree(children);
+        if (next == None || next == win) break;
+        win = next;
+        parent = win;
+    }
+    return parent != None ? parent : win;
+}
+
 static char *run_search_dmenu(void) {
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) return NULL;
@@ -105,6 +122,7 @@ static char *run_search_dmenu(void) {
         return NULL;
     }
 
+    win = top_level_window(dpy, win);
     char win_str[32];
     snprintf(win_str, sizeof(win_str), "%lu", (unsigned long)win);
 
