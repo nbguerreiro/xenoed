@@ -165,8 +165,9 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         Line *current_line = buffer_line(buf, ed->cur_line);
         size_t col = 1 + (size_t)g_utf8_strlen(current_line->data,
                                                 (glong)ed->cur_col);
-        snprintf(line_text, sizeof(line_text), "%s%s  %zu/%zu:%zu",
-                 fname, dirty, ed->cur_line + 1, buf->count, col);
+        snprintf(line_text, sizeof(line_text), "%-30s  %4zu/%-4zu  %4zu",
+                 fname, ed->cur_line + 1, buf->count, col);
+        (void)dirty;
     }
 
     PangoFontDescription *bar_font_desc = pango_font_description_from_string(XENOED_FONT_BAR);
