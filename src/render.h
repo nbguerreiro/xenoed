@@ -7,15 +7,17 @@
 
 typedef struct {
     PangoFontDescription *font_desc;
+    PangoFontDescription *bar_font_desc;
     int row_height;   /* fixed vertical rhythm, in pixels (from font metrics) */
     int ascent;       /* baseline offset within a row, in pixels */
     int padding;      /* left text padding / gutter, in pixels */
 } RenderState;
 
 /* Initializes metrics (row_height/ascent) by measuring `font_desc` against
- * a throwaway Cairo surface. `font_desc` ownership is NOT taken; caller
- * must keep it alive and free it. */
-void render_init(RenderState *rs, PangoFontDescription *font_desc);
+ * a throwaway Cairo surface. Font description ownership is NOT taken; caller
+ * must keep both descriptions alive and free them. */
+void render_init(RenderState *rs, PangoFontDescription *font_desc,
+                 PangoFontDescription *bar_font_desc);
 
 /* Draws the full editor UI (text buffer, cursor, status/command line) onto
  * `surface`, which must already be sized to width x height pixels. Also
