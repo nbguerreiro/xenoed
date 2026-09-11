@@ -798,6 +798,18 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
     if (len < 1) return;
 
     unsigned char c0 = (unsigned char)text[0];
+    if (c0 == 0x18) {
+        editor_cut_selection(ed);
+        return;
+    }
+    if (c0 == 0x03) {
+        editor_yank_selection(ed);
+        return;
+    }
+    if (c0 == 0x16) {
+        ed->paste_requested = 1;
+        return;
+    }
     if (c0 < 0x20 && c0 != '\t') return;
     if (c0 == 0x7F) return;
 
