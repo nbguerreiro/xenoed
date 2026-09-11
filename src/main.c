@@ -733,8 +733,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "xenoed: warning: no input context; falling back to plain XLookupString.\n");
     }
 
-    XMapWindow(dpy, win);
-
     X11Selections sel = {0};
     sel.clipboard = XInternAtom(dpy, "CLIPBOARD", False);
     sel.utf8_string = XInternAtom(dpy, "UTF8_STRING", False);
@@ -754,6 +752,7 @@ int main(int argc, char **argv) {
     render_init(&rs, font_desc);
 
     redraw(&rs, &bb, &ed, width, height);
+    XMapWindow(dpy, win);
 
     int running = 1;
     int mouse_dragging = 0;
