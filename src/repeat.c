@@ -1,6 +1,9 @@
 #include "editor.h"
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 /* Linker wrapper around editor_handle_key keeps the repeat implementation
  * independent of the editor's command dispatcher. Only one Editor exists
@@ -89,6 +92,76 @@ static void replay(Editor *ed) {
     replaying = 0;
 }
 
+static char *run_search_dmenu(void) {
+    int inpipe[2];
+    int outpipe[2];
+    if (pipe(inpipe) != 0) return NULL;
+    if (pipe(outpipe) != 0) {
+        close(inpipe[0]);
+        close(inpipe[1]);
+        return NULL;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(inpipe[0]); close(inpipe[1]);
+        close(outpipe[0]); close(outpipe[1]);
+        return NULL;
+    }
+
+    if (pid == 0) {
+        dup2(inpipe[0], STDIN_FILENO);
+        dup2(outpipe[1], STDOUT_FILENO);
+        close(inpipe[0]); close(inpipe[1]);
+        close(outpipe[0]); close(outpipe[1]);
+        execl("/bin/sh", "sh", "-c", "${DMENU:-dmenu} -p 'search:'",
+              "sh", (char *)NULL);
+        _exit(127);
+    }
+
+    close(inpipe[0]);
+    close(inpipe[1]);
+    close(outpipe[1]);
+
+    char *out = NULL;
+    size_t outlen = 0, outcap = 0;
+    char chunk[256];
+    ssize_t n;
+    while ((n = read(outpipe[0], chunk, sizeof(chunk))) > 0) {
+        if (outlen + (size_t)n + 1 > outcap) {
+            size_t newcap = outcap ? outcap * 2 : 256;
+            while (newcap < outlen + (size_t)n + 1) newcap *= 2;
+            char *new_out = realloc(out, newcap);
+            if (!new_out) {
+                free(out);
+                close(outpipe[0]);
+                waitpid(pid, NULL, 0);
+                return NULL;
+            }
+            out = new_out;
+            outcap = newcap;
+        }
+        memcpy(out + outlen, chunk, (size_t)n);
+        outlen += (size_t)n;
+    }
+    close(outpipe[0]);
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || outlen == 0) {
+        free(out);
+        return NULL;
+    }
+
+    while (outlen > 0 && (out[outlen - 1] == '\n' || out[outlen - 1] == '\r')) outlen--;
+    if (outlen == 0) {
+        free(out);
+        return NULL;
+    }
+    out[outlen] = '\0';
+    return out;
+}
+
 void __wrap_editor_init(Editor *ed, Buffer *buf) {
     clear_events();
     event_editor = NULL;
@@ -102,6 +175,18 @@ void __wrap_editor_handle_key(Editor *ed, EditorSpecialKey special,
                                const char *text, int text_len) {
     if (replaying) {
         __real_editor_handle_key(ed, special, text, text_len);
+        return;
+    }
+
+    if (ed->mode == MODE_NORMAL && special == EKEY_NONE && text_len == 1 && text && text[0] == '/') {
+        char *pattern = run_search_dmenu();
+        if (pattern) {
+            strncpy(ed->search_pattern, pattern, sizeof(ed->search_pattern) - 1);
+            ed->search_pattern[sizeof(ed->search_pattern) - 1] = '\0';
+            ed->search_backward = 0;
+            ed->search_requested = 1;
+            free(pattern);
+        }
         return;
     }
 
