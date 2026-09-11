@@ -35,6 +35,7 @@ typedef struct {
 static void backbuffer_create(Backbuffer *bb, int width, int height) {
     bb->pixmap = XCreatePixmap(bb->dpy, bb->win, (unsigned)width, (unsigned)height, (unsigned)bb->depth);
     bb->surface = cairo_xlib_surface_create(bb->dpy, bb->pixmap, bb->visual, width, height);
+    XSetWindowBackgroundPixmap(bb->dpy, bb->win, bb->pixmap);
     bb->width = width;
     bb->height = height;
 }
@@ -46,8 +47,10 @@ static void backbuffer_destroy(Backbuffer *bb) {
 
 static void backbuffer_resize(Backbuffer *bb, int width, int height) {
     if (width == bb->width && height == bb->height) return;
-    backbuffer_destroy(bb);
+    cairo_surface_destroy(bb->surface);
+    Pixmap old_pixmap = bb->pixmap;
     backbuffer_create(bb, width, height);
+    XFreePixmap(bb->dpy, old_pixmap);
 }
 
 static void backbuffer_present(Backbuffer *bb) {
@@ -733,8 +736,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "xenoed: warning: no input context; falling back to plain XLookupString.\n");
     }
 
-    XMapWindow(dpy, win);
-
     X11Selections sel = {0};
     sel.clipboard = XInternAtom(dpy, "CLIPBOARD", False);
     sel.utf8_string = XInternAtom(dpy, "UTF8_STRING", False);
@@ -754,6 +755,7 @@ int main(int argc, char **argv) {
     render_init(&rs, font_desc);
 
     redraw(&rs, &bb, &ed, width, height);
+    XMapWindow(dpy, win);
 
     int running = 1;
     int mouse_dragging = 0;

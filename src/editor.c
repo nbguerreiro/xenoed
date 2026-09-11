@@ -306,8 +306,11 @@ static void append_bytes(char **buf, size_t *len, size_t *cap, const char *src, 
         *buf = new_buf;
         *cap = newcap;
     }
-    memcpy(*buf + *len, src, n);
-    *len += n;
+    if (n > 0) {
+        if (!src) _exit(1);
+        memcpy(*buf + *len, src, n);
+        *len += n;
+    }
 }
 
 int editor_get_selection_text(const Editor *ed, char **out_text, size_t *out_len) {
