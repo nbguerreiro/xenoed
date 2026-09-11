@@ -88,11 +88,6 @@ void buffer_remove_line(Buffer *b, size_t idx) {
     b->count--;
 }
 
-/* Splits raw bytes into lines (on '\n', stripping a trailing '\r' for CRLF
- * input) and replaces b's entire contents with them. Shared by buffer_load
- * (reading a file) and buffer_set_from_text (replacing the buffer with an
- * external command's stdout) -- same splitting rules either way, so this
- * stays the one place that logic lives rather than two copies of it. */
 static void buffer_split_into_lines(Buffer *b, const char *text, size_t len) {
     for (size_t i = 0; i < b->count; i++) line_free(&b->lines[i]);
     b->count = 0;
@@ -129,7 +124,6 @@ int buffer_load(Buffer *b, const char *path) {
 
     FILE *f = fopen(path, "rb");
     if (!f) {
-        /* New file: start with one empty line. */
         buffer_split_into_lines(b, "", 0);
         return 0;
     }
@@ -141,7 +135,13 @@ int buffer_load(Buffer *b, const char *path) {
     while ((nread = fread(chunk, 1, sizeof(chunk), f)) > 0) {
         if (acc_len + nread > acc_cap) {
             acc_cap = (acc_len + nread) * 2 + 64;
-            acc = realloc(acc, acc_cap);
+            char *new_acc = realloc(acc, acc_cap);
+            if (!new_acc) {
+                free(acc);
+                fclose(f);
+                return -1;
+            }
+            acc = new_acc;
         }
         memcpy(acc + acc_len, chunk, nread);
         acc_len += nread;
