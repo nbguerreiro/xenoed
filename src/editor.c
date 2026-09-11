@@ -7,6 +7,11 @@
 #include <string.h>
 #include <unistd.h>
 
+/* One editor instance exists in xenoed. This transient flag distinguishes
+ * normal-mode P (paste before) from p (paste after) without making the X11
+ * side-effect API carry vim-specific paste direction state. */
+static int paste_before_requested;
+
 static void undo_stack_clear(UndoSnapshot **stack, size_t *count, size_t *cap);
 
 void editor_init(Editor *ed, Buffer *buf) {
@@ -374,7 +379,7 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
 
     if (linewise) {
         size_t line_start = 0;
-        size_t insert_at = ed->cur_line + 1;
+        size_t insert_at = paste_before_requested ? ed->cur_line : ed->cur_line + 1;
         size_t first_inserted = insert_at;
         for (size_t i = 0; i < len; i++) {
             if (text[i] == '\n') {
@@ -387,7 +392,7 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
         ed->cur_col = 0;
     } else {
         size_t seg_start = 0;
-        size_t paste_col = ed->cur_col + (insert_mode ? 0 : 1);
+        size_t paste_col = (insert_mode || paste_before_requested) ? ed->cur_col : ed->cur_col + 1;
         for (size_t i = 0; i <= len; i++) {
             if (i < len && text[i] != '\n') continue;
 
@@ -411,6 +416,7 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
     }
 
     b->dirty = 1;
+    paste_before_requested = 0;
     editor_clamp_cursor(ed);
 }
 
@@ -454,6 +460,7 @@ static void editor_request_user_command(Editor *ed, int index) {
         set_status(ed, "E: %s needs a selection", cmd->name ? cmd->name : cmd->script);
         return;
     }
+
     if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
 
     ed->user_command_index = index;
@@ -554,6 +561,10 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
                 editor_clamp_cursor(ed);
             } else if (op == 'y') {
                 editor_yank_line(ed);
+            } else if (op == 'g') {
+                ed->cur_line = 0;
+                ed->cur_col = 0;
+                editor_clamp_cursor(ed);
             }
         }
         return;
@@ -569,6 +580,11 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
         case 'k': move_vert(ed, -1); break;
         case '0': ed->cur_col = 0; break;
         case '$': ed->cur_col = (l->len == 0) ? 0 : utf8_prev_boundary(l->data, l->len); break;
+        case 'G':
+            ed->cur_line = (b->count > 0) ? b->count - 1 : 0;
+            editor_clamp_cursor(ed);
+            break;
+        case 'g': ed->pending_op = 'g'; break;
         case 'i': editor_checkpoint(ed); ed->mode = MODE_INSERT; break;
         case 'a':
             editor_checkpoint(ed);
@@ -612,7 +628,8 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             break;
         case 'd': ed->pending_op = 'd'; break;
         case 'y': ed->pending_op = 'y'; break;
-        case 'p': ed->paste_requested = 1; break;
+        case 'p': paste_before_requested = 0; ed->paste_requested = 1; break;
+        case 'P': paste_before_requested = 1; ed->paste_requested = 1; break;
         case 'u': editor_undo(ed); break;
         case 'v':
             editor_selection_start(ed);
@@ -859,6 +876,7 @@ static void handle_search(Editor *ed, EditorSpecialKey special, const char *text
 }
 
 void editor_handle_key(Editor *ed, EditorSpecialKey special, const char *text, int text_len) {
+    if (!ed->paste_requested) paste_before_requested = 0;
     ed->status[0] = '\0';
 
     if (special == EKEY_ESCAPE) {
