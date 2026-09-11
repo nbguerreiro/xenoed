@@ -160,7 +160,13 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
     } else if (ed->status[0]) {
         snprintf(line_text, sizeof(line_text), "%s", ed->status);
     } else {
-        snprintf(line_text, sizeof(line_text), "%zu/%zu", ed->cur_line + 1, buf->count);
+        const char *fname = buf->filename ? buf->filename : "[No Name]";
+        const char *dirty = buf->dirty ? " [+]" : "";
+        Line *current_line = buffer_line(buf, ed->cur_line);
+        size_t col = 1 + (size_t)g_utf8_strlen(current_line->data,
+                                                (glong)ed->cur_col);
+        snprintf(line_text, sizeof(line_text), "%s%s  %zu/%zu:%zu",
+                 fname, dirty, ed->cur_line + 1, buf->count, col);
     }
 
     PangoFontDescription *bar_font_desc = pango_font_description_from_string(XENOED_FONT_BAR);
