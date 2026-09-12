@@ -541,6 +541,13 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
     if (special != EKEY_NONE) { ed->pending_op = 0; ed->leader_pending = 0; return; }
     if (len < 1) return;
 
+    if (len == 2 &&
+        (unsigned char)text[0] == 0xC3 &&
+        (unsigned char)text[1] == 0xA7) {
+        ed->command_menu_requested = 1;
+        return;
+    }
+
     char c = text[0];
 
     if (ed->leader_pending) {
