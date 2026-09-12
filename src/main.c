@@ -234,7 +234,7 @@ static void perform_search(Editor *ed) {
         if (devnull >= 0) dup2(devnull, STDERR_FILENO);
         close(outpipe[0]);
         close(outpipe[1]);
-        execlp("grep", "grep", "-n", "-o", "-b", "-h", "-E", "--", ed->search_pattern, tmp_path,
+        execlp("grep", "grep", "-n", "-o", "-b", "-h", "-E", "-i", "--", ed->search_pattern, tmp_path,
                (char *)NULL);
         _exit(127);
     }
