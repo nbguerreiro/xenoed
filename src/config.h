@@ -111,8 +111,8 @@ typedef struct {
  * correctly and safely before anything real is behind it.
  */
 static const XenoedCommand XENOED_COMMANDS[] = {
-    { "notify", "notify-send", 'n', CMD_INPUT_NONE },
     { "indent", "indent.sh", 'i', CMD_INPUT_BUFFER },
+    { "format_table", "column -t -s \'|\' -o \'|\'", 0, CMD_INPUT_SELECTION },
 
     { NULL, NULL, 0, CMD_INPUT_NONE } /* sentinel -- must stay last */
 };
