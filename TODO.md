@@ -9,4 +9,11 @@
 - [x] 7. Accept an optional line-number argument at startup and jump immediately to that line
 - [x] 8. Replace the editor's search prompt with dmenu for a more consistent command/search interface
 - [x] 9. Make search case-insensitive
-- [ ] 10. Search and replace
+- [ ] 10. 'V' for selecting lines
+- [ ] 11. mouse scroll
+- [ ] 12. ! command
+- [ ] 13. Search and replace
+- [ ] 14. : should work on selection (visual mode)
+- [ ] 15. remember commands
+- [ ] 16. spell
+- [ ] 17. tags
