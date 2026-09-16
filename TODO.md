@@ -14,6 +14,6 @@
 - [x] 12. ! command
 - [x] 13. remember commands
 - [ ] 14. : should work on selection (visual mode)
-- [ ] 15. Search and replace
+- [x] 15. Search and replace
 - [ ] 16. spell
 - [ ] 17. tags

@@ -3,6 +3,7 @@
 !.gitignore
 !Makefile
 !README.md
+!AGENTS.md
 
 !src/
 !src/*.c

@@ -189,11 +189,30 @@ the known commands:
 | `q` | quit (refuses if there are unsaved changes) |
 | `q!` | quit, discarding changes |
 | `wq` | save and quit |
+| `x` | save and quit |
+| `s/pattern/repl/[g]` | search-and-replace (see below) |
 
 Picking one directly works as expected; so does ignoring the list and just
 typing, e.g. `w notes.txt` -- dmenu returns whatever's currently typed on
 Enter even when nothing's highlighted, so commands taking an argument work
 exactly as they did with the old bar, just entered through dmenu instead.
+
+### Search and replace (`:s`)
+
+`:s/pattern/repl/` finds `pattern` (POSIX extended regex, case-insensitive)
+and replaces each line's *first* match with `repl`; a trailing `g` replaces
+*every* match per line. In normal mode the scope is the whole buffer; in
+visual mode it's just the selection (one undo step covers a selection
+replacement; whole-buffer replaces are also one undo step). Prefix the
+command with `%` (`:%s/.../.../`) to force whole-buffer scope even from
+visual mode. An empty pattern reuses the last `/` search pattern; an empty
+replacement deletes the matches.
+
+In `repl`, `&` is the whole match, `\0`-`\9` are the capture groups
+(`\0` the whole match, `\1`.. the parenthesized groups), `\X` a literal `X`
+(e.g. `\\` a single backslash), and `\/` a literal `/`. A pattern that
+matches nothing leaves the buffer unchanged and reports
+`E: pattern not found`.
 
 Every non-empty choice is remembered in `~/.xenoed/colon_hist`. Next time
 you open `:`, most-used commands float to the top of the dmenu list
@@ -404,10 +423,11 @@ make -C . 2>/dev/null; cc -std=c11 -D_POSIX_C_SOURCE=200809L \
   `y`/`d`/`x`/`p` to act on a characterwise or linewise span selected by
   hand.
 - Search is find-and-jump only: no incremental "highlight as you type" and
-  no case-insensitive toggle. No dedicated search-and-replace command
-  either, though a `CMD_INPUT_BUFFER` external command running `sed`/`perl`
-  (the original motivating example for the "outsource to external tools"
-  idea, several conversations back) gets most of the way there by hand.
+  no case-insensitive toggle. The `:s` substitution is implemented in the
+  editor itself with POSIX regexes -- it doesn't lean on `sed`/`perl` the
+  way the "outsource to external tools" idea (the original motivating
+  example for `CMD_INPUT_BUFFER`) once promised; for that, `!` plus a
+  `sed`/`perl` one-liner still works.
 - Mouse drag only starts a selection in insert mode; it doesn't enter
   visual mode from normal mode, so there's no click-and-drag equivalent of
   pressing `v` first. Also doesn't auto-scroll or grab the pointer, so

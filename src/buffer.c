@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void line_ensure_cap(Line *l, size_t need) {
     if (need + 1 <= l->cap) return; /* +1 for NUL */
@@ -52,6 +53,7 @@ static void buffer_ensure_cap(Buffer *b, size_t need) {
 
 Buffer *buffer_new(void) {
     Buffer *b = calloc(1, sizeof(Buffer));
+    if(b == NULL){ _exit(-1); };
     buffer_ensure_cap(b, 1);
     b->lines[0] = (Line){0};
     line_set(&b->lines[0], "", 0);

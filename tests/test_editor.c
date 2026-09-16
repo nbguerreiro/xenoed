@@ -896,13 +896,14 @@ int main(void) {
             if (XENOED_COMMANDS[i].name) user_named++;
         }
         printf("Test 48 (editor_command_names): count=%d\n", count);
-        CHECK(count == 5 + user_named);
+        CHECK(count == 6 + user_named);
         CHECK(strcmp(names[0], "w") == 0);
         CHECK(strcmp(names[1], "q") == 0);
         CHECK(strcmp(names[2], "q!") == 0);
         CHECK(strcmp(names[3], "wq") == 0);
         CHECK(strcmp(names[4], "x") == 0);
-        for (int i = 0, n = 5; XENOED_COMMANDS[i].script != NULL; i++) {
+        CHECK(strcmp(names[5], "s/pat/repl/[g]") == 0);
+        for (int i = 0, n = 6; XENOED_COMMANDS[i].script != NULL; i++) {
             if (!XENOED_COMMANDS[i].name) continue;
             CHECK(strcmp(names[n], XENOED_COMMANDS[i].name) == 0);
             n++;
@@ -1357,6 +1358,170 @@ int main(void) {
         CHECK(!editor_replace_selection_text(&ed, "x", 1));
         CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0);
         printf("Test 66 (replace_selection_text no-op without selection): ok\n");
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 67: :s/pat/repl/ replaces the FIRST match on every line */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ifoo<CR>foobar<CR>foo<Esc>");
+        editor_run_command(&ed, "s/foo/F/");
+        printf("Test 67 (whole-buffer :s first-match-per-line): status=\"%s\"\n", ed.status);
+        CHECK(strcmp(ed.status, "3 replacements") == 0);
+        CHECK(strcmp(buffer_line(b, 0)->data, "F") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "Fbar") == 0);
+        CHECK(strcmp(buffer_line(b, 2)->data, "F") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 68: trailing g replaces EVERY match; one undo step restores */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ifoo foo<CR>foo<Esc>");
+        editor_run_command(&ed, "s/foo/bar/g");
+        printf("Test 68 (:s ... /g):\n"); dump(b);
+        CHECK(strcmp(ed.status, "3 replacements") == 0);
+        CHECK(strcmp(buffer_line(b, 0)->data, "bar bar") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "bar") == 0);
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "foo foo") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "foo") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 69: replacement backrefs: '&' whole match, '\N' groups, '\\' */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        editor_run_command(&ed, "s/(h)/[&]/g");
+        CHECK(strcmp(ed.status, "1 replacements") == 0);
+        CHECK(strcmp(buffer_line(b, 0)->data, "[h]ello") == 0);
+
+        feed(&ed, "u");
+        editor_run_command(&ed, "s/(l)(l)/\\1\\2\\2/g");
+        CHECK(strcmp(buffer_line(b, 0)->data, "helllo") == 0);
+
+        feed(&ed, "u");
+        editor_run_command(&ed, "s/e/\\\\/g");
+        CHECK(strcmp(ed.status, "1 replacements") == 0);
+        printf("Test 69 (replacement & / \\N / \\\\ escapes): \"%s\"\n", buffer_line(b, 0)->data);
+        CHECK(strcmp(buffer_line(b, 0)->data, "h\\llo") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 70: no match reports an error and changes nothing (nor undo) */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        size_t undo_before = ed.undo_count;
+        editor_run_command(&ed, "s/xyz/ABC/g");
+        printf("Test 70 (no match): status=\"%s\" undo=%zu\n", ed.status, ed.undo_count);
+        CHECK(strstr(ed.status, "pattern not found") != NULL);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0);
+        CHECK(ed.undo_count == undo_before);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 71: empty pattern reuses the last /-search pattern */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihex<CR>null<Esc>");
+        strncpy(ed.search_pattern, "l", sizeof(ed.search_pattern) - 1);
+        editor_run_command(&ed, "s//X/g");
+        printf("Test 71 (empty pattern reuses last search): status=\"%s\"\n", ed.status);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hex") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "nuXX") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 72: invalid regex and malformed substitution are reported */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        editor_run_command(&ed, "s/(/x/");
+        printf("Test 72a (invalid regex): status=\"%s\"\n", ed.status);
+        CHECK(strstr(ed.status, "invalid") != NULL);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0);
+
+        editor_run_command(&ed, "s/foo/bar/bogus");
+        printf("Test 72b (bad substitution syntax): status=\"%s\"\n", ed.status);
+        CHECK(strstr(ed.status, "substitution") != NULL);
+
+        editor_run_command(&ed, "s/hello//");
+        CHECK(strcmp(buffer_line(b, 0)->data, "") == 0);
+        printf("Test 72c (empty replacement deletes matches): ok\n");
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 73: visual-mode :s only touches the selection, in one undo step */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello big world<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "vllll"); /* selects "hello" -- h e l l o */
+        CHECK(ed.mode == MODE_VISUAL);
+        editor_run_command(&ed, "s/l/L/g");
+        printf("Test 73 (visual :s on selection):\n"); dump(b);
+        CHECK(strcmp(ed.status, "2 replacements") == 0);
+        CHECK(strcmp(buffer_line(b, 0)->data, "heLLo big world") == 0);
+        CHECK(ed.mode == MODE_NORMAL);
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello big world") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 74: '%' prefix forces whole-buffer scope even in visual mode */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ifoo bar<CR>baz foo<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "vll"); /* selects "foo" */
+        editor_run_command(&ed, "%s/foo/F/g");
+        printf("Test 74 (%%s forces whole buffer from visual):\n"); dump(b);
+        CHECK(strcmp(ed.status, "2 replacements") == 0);
+        CHECK(strcmp(buffer_line(b, 0)->data, "F bar") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "baz F") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 75: ':' opens the command menu from visual mode too */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "v");
+        feed(&ed, ":");
+        printf("Test 75 (visual : requests command menu): req=%d mode=%d\n",
+               ed.command_menu_requested, ed.mode);
+        CHECK(ed.command_menu_requested);
+        CHECK(ed.mode == MODE_VISUAL);
         editor_deinit(&ed);
         buffer_free(b);
     }

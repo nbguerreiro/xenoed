@@ -54,7 +54,7 @@ test-cmdhist: tests/test_cmdhist.c src/cmdhist.c
 	./tests/test_cmdhist
 
 lint:
-	cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr $(SRC)
+	cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr $(SRC) 2>&1 | tee lint.log;
 
 clean:
 	rm -rfv $(BIN) $(TEST_BIN) tests/test_cmdhist reports src/*.o *.s *.bc *.db *.log

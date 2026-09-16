@@ -1,6 +1,8 @@
 #include "editor.h"
 #include "config.h"
 #include "utf8.h"
+#include <ctype.h>
+#include <regex.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -408,6 +410,7 @@ static void editor_set_yank(Editor *ed, char *text, size_t len) {
 static void editor_yank_line(Editor *ed) {
     const Line *l = buffer_line(ed->buf, ed->cur_line);
     char *copy = malloc(l->len + 1);
+    if(copy == NULL){ _exit(-1); };
     memcpy(copy, l->data, l->len);
     copy[l->len] = '\n';
     editor_set_yank(ed, copy, l->len + 1);
@@ -550,6 +553,308 @@ void editor_replace_buffer_text(Editor *ed, const char *text, size_t len) {
     editor_clamp_cursor(ed);
 }
 
+/* --- :s search-and-replace -----------------------------------------------
+ *
+ * `:s/pattern/replacement/[g]` (leading '%' optional: forces whole-buffer
+ * scope). Replaces regex matches of `pattern` with `replacement`; without
+ * the trailing `g` only the first match on each line is touched, with `g`
+ * every match. Normal mode `:s` works on the whole buffer; visual mode
+ * `:s` works on the current selection (the leading `%` forces the whole
+ * buffer even then). An empty `pattern` reuses the last `/`-search pattern.
+ *
+ * The pattern is grep's extended regex with the same case-insensitivity as
+ * `/`-search (-E -i), applied per line via POSIX regexec -- in-process, no
+ * shell, no sed -- so `replacement`, which may contain anything, can never
+ * be re-interpreted by a shell. `replacement` is literal text where:
+ *     '&'          the whole match
+ *     '\0'..'\9'   a captured group (empty if that group didn't match)
+ *     '\X'         a literal 'X' (e.g. '\\' is a single backslash)
+ */
+
+static void expand_replacement(const char *repl, size_t repl_len,
+                               const char *text, const regmatch_t *rm,
+                               char **out, size_t *out_len, size_t *out_cap) {
+    for (size_t i = 0; i < repl_len; i++) {
+        char c = repl[i];
+        if (c == '\\') {
+            if (i + 1 >= repl_len) break;
+            char e = repl[i + 1];
+            if (e >= '0' && e <= '9') {
+                int g = e - '0';
+                if (rm[g].rm_so >= 0)
+                    append_bytes(out, out_len, out_cap, text + rm[g].rm_so,
+                                 (size_t)(rm[g].rm_eo - rm[g].rm_so));
+            } else {
+                append_bytes(out, out_len, out_cap, &e, 1);
+            }
+            i++;
+        } else if (c == '&') {
+            append_bytes(out, out_len, out_cap, text + rm[0].rm_so,
+                         (size_t)(rm[0].rm_eo - rm[0].rm_so));
+        } else {
+            append_bytes(out, out_len, out_cap, &c, 1);
+        }
+    }
+}
+
+/* Rewrite one line's matches into *out. Returns the number of replacements
+ * (0 if the pattern didn't match). `line` only needs a NUL after `len`,
+ * which buffer_line guarantees. */
+static long sub_line(const char *line, size_t len, regex_t *re,
+                     const char *repl, size_t repl_len, int global,
+                     char **out, size_t *out_len, size_t *out_cap) {
+    regmatch_t rm[10];
+    size_t pos = 0;
+    long count = 0;
+    for (;;) {
+        if (regexec(re, line + pos, 10, rm, 0) == REG_NOMATCH) {
+            append_bytes(out, out_len, out_cap, line + pos, len - pos);
+            break;
+        }
+        size_t start = pos + (size_t)rm[0].rm_so;
+        size_t end = pos + (size_t)rm[0].rm_eo;
+        append_bytes(out, out_len, out_cap, line + pos, start - pos);
+        expand_replacement(repl, repl_len, line, rm, out, out_len, out_cap);
+        count++;
+        if (!global) {
+            append_bytes(out, out_len, out_cap, line + end, len - end);
+            break;
+        }
+        if (end == start) {
+            /* Zero-width match: emit the matched-at byte and step past it so
+             * the scan makes progress; a bare `$`/`.*` at end-of-line stops. */
+            if (end < len) {
+                append_bytes(out, out_len, out_cap, line + end, 1);
+                pos = end + 1;
+            } else {
+                break;
+            }
+        } else {
+            pos = end;
+        }
+        if (pos > len) break;
+    }
+    return count;
+}
+
+static long sub_whole_buffer(Editor *ed, regex_t *re,
+                             const char *repl, size_t repl_len, int global) {
+    Buffer *b = ed->buf;
+    long total = 0;
+    for (size_t i = 0; i < b->count; i++) {
+        const Line *l = buffer_line(b, i);
+        char *out = NULL;
+        size_t olen = 0, ocap = 0;
+        long n = sub_line(l->data, l->len, re, repl, repl_len, global, &out, &olen, &ocap);
+        if (n > 0) {
+            if (olen != l->len || (out && memcmp(out, l->data, olen) != 0)) {
+                line_set(buffer_line(b, i), out ? out : "", olen);
+            }
+            total += n;
+        }
+        free(out);
+    }
+    return total;
+}
+
+static long sub_selection(Editor *ed, regex_t *re,
+                          const char *repl, size_t repl_len, int global) {
+    if (!editor_has_selection(ed)) { set_status(ed, "E: no selection"); return -1; }
+    char *sel = NULL;
+    size_t slen = 0;
+    if (!editor_get_selection_text(ed, &sel, &slen)) {
+        set_status(ed, "E: unable to read selection");
+        return -1;
+    }
+
+    /* Apply per line and re-join, so `^`/`$` and the non-g "first match per
+     * line" rule behave exactly as they do for the whole-buffer scope. */
+    char *res = NULL;
+    size_t rlen = 0, rcap = 0;
+    long total = 0;
+    size_t i = 0;
+    while (i <= slen) {
+        size_t end = i;
+        while (end < slen && sel[end] != '\n') end++;
+        int had_nl = (end < slen);
+        char *out = NULL;
+        size_t olen = 0, ocap = 0;
+        total += sub_line(sel + i, end - i, re, repl, repl_len, global, &out, &olen, &ocap);
+        append_bytes(&res, &rlen, &rcap, out ? out : "", olen);
+        free(out);
+        if (had_nl) {
+            append_bytes(&res, &rlen, &rcap, "\n", 1);
+            i = end + 1;
+        } else {
+            break;
+        }
+    }
+    free(sel);
+
+    if (total <= 0) { free(res); return 0; }
+
+    /* One undo checkpoint covers the whole substitution; replaces the
+     * span and drops back to normal mode. */
+    editor_replace_selection_text(ed, res ? res : "", rlen);
+    free(res);
+    return total;
+}
+
+typedef struct {
+    char *pattern;   /* malloc'd; NULL when empty (then use_last is set) */
+    size_t pattern_len;
+    char *repl;      /* malloc'd; may be zero-length */
+    size_t repl_len;
+    int global;
+    int whole;       /* leading '%' seen */
+} Subst;
+
+/* Returns 1 when cmd is a substitution, 0 when the string isn't one (caller
+ * may still match it against XENOED_COMMANDS), -1 after reporting a syntax
+ * error. */
+/* Copy one escaped unit from *pp into out. Rules (delim = substitution
+ * delimiter):
+ *   \DELIM  -> literal DELIM           (so / can appear in pat/repl)
+ *   \\      -> both backslashes kept   (expand_replacement/regcomp unescape)
+ *   earlier: regcomp sees the escape; expand_replacement handles \0-\9 etc)
+ *   \X      -> both chars kept
+ *   \0      -> the backslash itself (match nothing) */
+static void sub_copy_escaped(char **out, size_t *out_len, size_t *out_cap,
+                             const char **pp, char delim) {
+    const char *p = *pp;
+    if (*p == '\\' && p[1] != '\0' && p[1] == delim) {
+        append_bytes(out, out_len, out_cap, &delim, 1);
+        *pp = p + 2;
+    } else if (*p == '\\' && p[1] == '\\') {
+        append_bytes(out, out_len, out_cap, p, 2);
+        *pp = p + 2;
+    } else if (*p == '\\' && p[1] != '\0') {
+        append_bytes(out, out_len, out_cap, p, 2);
+        *pp = p + 2;
+    } else {
+        append_bytes(out, out_len, out_cap, p, 1);
+        *pp = p + 1;
+    }
+}
+
+static int sub_parse(Editor *ed, const char *cmd, Subst *st) {
+    memset(st, 0, sizeof(*st));
+    const char *p = cmd;
+    if (*p == '%') { st->whole = 1; p++; }
+    if (*p != 's') return 0;
+    p++;
+
+    char delim = *p;
+    if (delim == '\0' || isspace((unsigned char)delim) || isalnum((unsigned char)delim))
+        return 0;
+    p++;
+
+    char *pat = NULL;
+    size_t pl = 0, pc = 0;
+    for (; *p != '\0' && *p != delim; ) {
+        sub_copy_escaped(&pat, &pl, &pc, &p, delim);
+    }
+    if (*p == '\0') {
+        free(pat);
+        set_status(ed, "E: bad substitution");
+        return -1;
+    }
+    p++;
+
+    /* regcomp needs a NUL-terminated pattern; append_bytes never wrote one. */
+    {
+        char *tp = realloc(pat, pl + 1);
+        if (!tp) _exit(1);
+        pat = tp;
+        pat[pl] = '\0';
+    }
+
+    char *rep = NULL;
+    size_t rl = 0, rc = 0;
+    for (; *p != '\0' && *p != delim; ) {
+        sub_copy_escaped(&rep, &rl, &rc, &p, delim);
+    }
+    if (*p == delim) p++;
+    if (*p == 'g') { st->global = 1; p++; }
+    if (*p != '\0') {
+        free(pat);
+        free(rep);
+        set_status(ed, "E: bad substitution");
+        return -1;
+    }
+
+    st->pattern = pat;
+    st->pattern_len = pl;
+    st->repl = rep;
+    st->repl_len = rl;
+    return 1;
+}
+
+static int run_substitute(Editor *ed, const char *cmd) {
+    Subst st;
+    int r = sub_parse(ed, cmd, &st);
+    if (r <= 0) return r == 0 ? 0 : 1;
+
+    if (st.pattern_len == 0) {
+        if (ed->search_pattern[0] == '\0') {
+            set_status(ed, "E: no previous search pattern");
+            free(st.pattern);
+            free(st.repl);
+            return 1;
+        }
+        /* Reuse the last /-search pattern; st.pattern stays NULL. */
+    }
+
+    const char *pat = st.pattern_len == 0 ? ed->search_pattern : st.pattern;
+    regex_t re;
+    if (regcomp(&re, pat, REG_EXTENDED | REG_ICASE) != 0) {
+        set_status(ed, "E: invalid search pattern");
+        free(st.pattern);
+        free(st.repl);
+        return 1;
+    }
+
+    long n;
+    if (st.whole || !(ed->mode == MODE_VISUAL && editor_has_selection(ed))) {
+        /* Whole buffer. Snapshot first, commit into undo only if something
+         * actually changed, so a no-match :s leaves undo history intact. */
+        UndoSnapshot before;
+        snapshot_capture(ed, &before);
+        n = sub_whole_buffer(ed, &re, st.repl, st.repl_len, st.global);
+        if (n > 0) {
+            undo_stack_push(&ed->undo_stack, &ed->undo_count, &ed->undo_cap, before);
+            undo_stack_trim(&ed->undo_stack, &ed->undo_count, UNDO_MAX_DEPTH);
+            undo_stack_clear(&ed->redo_stack, &ed->redo_count, &ed->redo_cap);
+            ed->buf->dirty = 1;
+            /* A '%'-prefixed :s from visual mode leaves the selection's
+             * byte offsets meaningless; drop out of visual mode like any
+             * whole-buffer op does. */
+            if (ed->mode == MODE_VISUAL) {
+                ed->mode = MODE_NORMAL;
+                editor_selection_clear(ed);
+            }
+            editor_clamp_cursor(ed);
+        } else {
+            snapshot_free(&before);
+        }
+    } else {
+        n = sub_selection(ed, &re, st.repl, st.repl_len, st.global);
+    }
+
+    regfree(&re);
+    free(st.pattern);
+    free(st.repl);
+
+    if (n < 0) { /* sub_selection already reported the problem */
+        return 1;
+    } else if (n == 0) {
+        set_status(ed, "E: pattern not found");
+    } else {
+        set_status(ed, "%ld replacements", n);
+    }
+    return 1;
+}
+
 void editor_yank_selection(Editor *ed) {
     if (!editor_has_selection(ed)) return;
     char *text_out = NULL;
@@ -613,6 +918,11 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
         if (!b->filename) { set_status(ed, "E: no file name (use :w <path> first)"); }
         else if (buffer_save(b, NULL) == 0) ed->want_quit = 1;
         else set_status(ed, "E: could not write %s", b->filename);
+    } else if (cmd[0] == 's' || (cmd[0] == '%' && cmd[1] == 's')) {
+        /* `s/pat/repl/[g]` search-and-replace (run_substitute returns 0 only
+         * if the string isn't actually one -- then a config.h command named
+         * just 's' below still gets a chance). */
+        if (run_substitute(ed, cmd) > 0) return;
     } else {
         int matched = -1;
         for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
@@ -627,13 +937,13 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
 }
 
 const char *const *editor_command_names(int *out_count) {
-    static const char *const builtin[] = { "w", "q", "q!", "wq", "x" };
-    static const char *names[5 + 64];
+    static const char *const builtin[] = { "w", "q", "q!", "wq", "x", "s/pat/repl/[g]" };
+    static const char *names[6 + 64];
     int n = 0;
-    for (size_t i = 0; i < sizeof(builtin) / sizeof(builtin[0]) && n < 5 + 64; i++) {
+    for (size_t i = 0; i < sizeof(builtin) / sizeof(builtin[0]) && n < 6 + 64; i++) {
         names[n++] = builtin[i];
     }
-    for (int i = 0; XENOED_COMMANDS[i].script != NULL && n < 5 + 64; i++) {
+    for (int i = 0; XENOED_COMMANDS[i].script != NULL && n < 6 + 64; i++) {
         if (XENOED_COMMANDS[i].name) names[n++] = XENOED_COMMANDS[i].name;
     }
     *out_count = n;
@@ -749,6 +1059,7 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
                 editor_checkpoint(ed);
                 size_t next = utf8_next_boundary(l->data, l->len, ed->cur_col);
                 char *copy = malloc(next - ed->cur_col);
+                if(copy == NULL){ _exit(-1); };
                 memcpy(copy, l->data + ed->cur_col, next - ed->cur_col);
                 editor_set_yank(ed, copy, next - ed->cur_col);
                 line_delete_bytes(l, ed->cur_col, next - ed->cur_col);
@@ -863,6 +1174,11 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
              * user cancels / the filter fails). */
             ed->external_filter_requested = 1;
             ed->external_filter_whole_buffer = 0;
+            break;
+        case ':':
+            /* command menu from visual mode, so :s/.../... operates on the
+             * selection; selection is kept until the command runs */
+            ed->command_menu_requested = 1;
             break;
         case XENOED_LEADER: ed->leader_pending = 1; break;
         default: break;
