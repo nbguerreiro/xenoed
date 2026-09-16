@@ -61,32 +61,41 @@ make EXTRA_CFLAGS='-DXENOED_FONT="Inter Variable @wght=650,opsz=18"'   # variabl
 | `p` | paste CLIPBOARD after the current line (or inline, if what's on the clipboard isn't a whole line) |
 | `u` | undo |
 | `Ctrl+R` | redo |
-| `v` | enter visual mode |
+| `v` | enter visual mode (characterwise) |
+| `V` | enter visual mode (linewise) |
 | `/` | search forward (see below) |
 | `n` / `N` | repeat the last search, forward / backward |
 | `:` | open the command picker (see below) |
 | `SPACE` then a key | run a user-defined external command (see below) |
 | `Esc` | (no-op in normal mode) |
 
-**Visual mode** (entered with `v`)
+**Visual mode** (entered with `v` or `V`)
 
+`v` is characterwise; `V` is linewise (whole lines from the smaller of
+the anchor/cursor line through the larger, regardless of column). You can
+switch between the two with `v`/`V` while already in visual mode.
 Movement (`h j k l`, arrows, `0`, `$`) extends the selection from wherever
-the cursor was when `v` was pressed. Unlike insert-mode selection, the
-cursor here rests *on* a character (matching normal mode), so the
-selection is inclusive of both ends -- pressing `v` alone already selects
-the one character under the cursor.
+the cursor was when visual mode began. Unlike insert-mode selection, the
+cursor here rests *on* a character (matching normal mode), so characterwise
+selections are inclusive of both ends -- pressing `v` alone already
+selects the one character under the cursor, and `V` alone selects the
+whole current line.
 
 | Key | Action |
 |---|---|
 | `y` | yank the selection to CLIPBOARD, cursor moves to its start, back to normal mode |
 | `d` / `x` | cut (yank, then delete) the selection, back to normal mode |
 | `p` | paste CLIPBOARD over the selection, back to normal mode |
+| `v` / `V` | switch to characterwise / linewise while staying in visual mode |
 | `SPACE` then a key | run a user-defined external command on the selection (see below) |
 | `Esc` | cancel -- back to normal mode, buffer unchanged |
 
-This is intentionally minimal: no case-changing, block-visual, or
-linewise-visual variants -- just enough for `y`/`d` to act on an arbitrary
-span instead of only whole lines. Note vim's own visual-mode `u` means
+Linewise yanks end in a newline (same as `yy`), so a later `p` pastes them
+as whole lines; linewise delete removes the lines entirely (same as `dd`).
+
+This is intentionally minimal: no case-changing or block-visual variants --
+just enough for `y`/`d` to act on an arbitrary span or set of lines instead
+of only whole lines via `yy`/`dd`. Note vim's own visual-mode `u` means
 something different (lowercase the selection); rather than risk that
 confusion, `u` is simply unbound in visual mode here.
 
@@ -123,12 +132,12 @@ Two separate X11 selections are used, deliberately not one:
   normal mode, `y`/`d`/`x`/`p` in visual mode), matching the more familiar
   "you have to copy on purpose" convention most apps use.
 
-Normal-mode `y`/`p` only work on whole lines (`yy`); visual mode (`v`) is
-how to yank or cut an arbitrary span instead. `p` always asks the real
-CLIPBOARD owner for its content -- so it works for pasting text copied in
-*any* other X application, not just xenoed's own yanks -- and decides
-whether to paste it as whole new line(s) or inline at the cursor based on
-whether the copied text ends in a newline.
+Normal-mode `y`/`p` only work on whole lines (`yy`); visual mode (`v` /
+`V`) is how to yank or cut an arbitrary span or set of lines instead. `p`
+always asks the real CLIPBOARD owner for its content -- so it works for
+pasting text copied in *any* other X application, not just xenoed's own
+yanks -- and decides whether to paste it as whole new line(s) or inline at
+the cursor based on whether the copied text ends in a newline.
 
 ## Right-click context menu
 
@@ -358,10 +367,11 @@ make -C . 2>/dev/null; cc -std=c11 -D_POSIX_C_SOURCE=200809L \
 - No horizontal scrolling.
 - `dd` is the only multi-key normal-mode command; no `dw`, counts, or
   registers (there's only ever one yank register, not vim's `"a`-`"z`).
-- Visual mode is intentionally minimal: no case-changing, block-visual, or
-  linewise-visual variants, and `v` doesn't extend to `d`/`y` composing
-  with motions the way vim's operator-pending mode does (e.g. no `dw`) --
-  just enough for `y`/`d`/`x`/`p` to act on a span selected by hand.
+- Visual mode is intentionally minimal: no case-changing or block-visual
+  variants, and `v`/`V` don't extend to `d`/`y` composing with motions the
+  way vim's operator-pending mode does (e.g. no `dw`) -- just enough for
+  `y`/`d`/`x`/`p` to act on a characterwise or linewise span selected by
+  hand.
 - Search is find-and-jump only: no incremental "highlight as you type" and
   no case-insensitive toggle. No dedicated search-and-replace command
   either, though a `CMD_INPUT_BUFFER` external command running `sed`/`perl`

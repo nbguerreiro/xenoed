@@ -886,21 +886,27 @@ int main(void) {
     }
 
     /* Test 48: editor_command_names() exposes the built-in commands, PLUS
-     * whatever config.h's XENOED_COMMANDS table adds (its three example
-     * entries, at time of writing), for a dmenu-style picker to offer */
+     * whatever config.h's XENOED_COMMANDS table adds (named entries), for a
+     * dmenu-style picker to offer */
     {
         int count = 0;
         const char *const *names = editor_command_names(&count);
+        int user_named = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].name) user_named++;
+        }
         printf("Test 48 (editor_command_names): count=%d\n", count);
-        CHECK(count == 8);
+        CHECK(count == 5 + user_named);
         CHECK(strcmp(names[0], "w") == 0);
         CHECK(strcmp(names[1], "q") == 0);
         CHECK(strcmp(names[2], "q!") == 0);
         CHECK(strcmp(names[3], "wq") == 0);
         CHECK(strcmp(names[4], "x") == 0);
-        CHECK(strcmp(names[5], "example-none") == 0);
-        CHECK(strcmp(names[6], "example-buffer") == 0);
-        CHECK(strcmp(names[7], "example-selection") == 0);
+        for (int i = 0, n = 5; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (!XENOED_COMMANDS[i].name) continue;
+            CHECK(strcmp(names[n], XENOED_COMMANDS[i].name) == 0);
+            n++;
+        }
     }
 
     /* Test 49: leader key (SPACE) + a bound key requests the matching
@@ -909,11 +915,19 @@ int main(void) {
         Buffer *b = buffer_new();
         buffer_load(b, NULL);
         Editor ed; editor_init(&ed, b);
-        feed(&ed, " t"); /* SPACE then 't' -> "example-none" (CMD_INPUT_NONE) */
+        /* Find the first command that has a leader keybinding. */
+        int idx = -1;
+        char key = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].key != 0) { idx = i; key = XENOED_COMMANDS[i].key; break; }
+        }
+        CHECK(idx >= 0);
+        char keys[3] = { ' ', key, '\0' };
+        feed(&ed, keys);
         printf("Test 49 (leader+key requests a user command): requested=%d index=%d\n",
                ed.user_command_requested, ed.user_command_index);
         CHECK(ed.user_command_requested);
-        CHECK(strcmp(XENOED_COMMANDS[ed.user_command_index].name, "example-none") == 0);
+        CHECK(ed.user_command_index == idx);
         editor_deinit(&ed);
         buffer_free(b);
     }
@@ -938,7 +952,15 @@ int main(void) {
         Buffer *b = buffer_new();
         buffer_load(b, NULL);
         Editor ed; editor_init(&ed, b);
-        feed(&ed, " s"); /* "example-selection", CMD_INPUT_SELECTION */
+        int idx = -1;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_SELECTION && XENOED_COMMANDS[i].name) {
+                idx = i;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        editor_run_command(&ed, XENOED_COMMANDS[idx].name);
         printf("Test 51 (selection-input command from normal mode refuses): status=\"%s\" requested=%d\n",
                ed.status, ed.user_command_requested);
         CHECK(!ed.user_command_requested);
@@ -955,15 +977,23 @@ int main(void) {
         Buffer *b = buffer_new();
         buffer_load(b, NULL);
         Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_SELECTION && XENOED_COMMANDS[i].name) {
+                idx = i;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
         feed(&ed, "ihello<Esc>");
         ed.cur_line = 0; ed.cur_col = 0;
         feed(&ed, "v");
         feed(&ed, "lll"); /* select "hell" */
-        feed(&ed, " s");
+        editor_run_command(&ed, XENOED_COMMANDS[idx].name);
         printf("Test 52 (selection-input command from visual mode): requested=%d mode=%d\n",
                ed.user_command_requested, ed.mode);
         CHECK(ed.user_command_requested);
-        CHECK(strcmp(XENOED_COMMANDS[ed.user_command_index].name, "example-selection") == 0);
+        CHECK(ed.user_command_index == idx);
         CHECK(ed.mode == MODE_NORMAL);
         editor_deinit(&ed);
         buffer_free(b);
@@ -975,11 +1005,19 @@ int main(void) {
         Buffer *b = buffer_new();
         buffer_load(b, NULL);
         Editor ed; editor_init(&ed, b);
-        editor_run_command(&ed, "example-buffer");
+        int idx = -1;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].name && XENOED_COMMANDS[i].input != CMD_INPUT_SELECTION) {
+                idx = i;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        editor_run_command(&ed, XENOED_COMMANDS[idx].name);
         printf("Test 53 (':' picker dispatches a user command by name): requested=%d\n",
                ed.user_command_requested);
         CHECK(ed.user_command_requested);
-        CHECK(strcmp(XENOED_COMMANDS[ed.user_command_index].name, "example-buffer") == 0);
+        CHECK(ed.user_command_index == idx);
         editor_deinit(&ed);
         buffer_free(b);
     }
@@ -1037,6 +1075,150 @@ int main(void) {
         printf("Test 56b (undo restores the original):\n"); dump(b);
         CHECK(b->count == 3);
         CHECK(strcmp(buffer_line(b, 0)->data, "one") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 57: 'V' alone selects the whole current line; yank is linewise
+     * (trailing '\n'), matching yy */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello world<Esc>");
+        ed.cur_line = 0; ed.cur_col = 3; /* mid-line -- column must not matter */
+        feed(&ed, "V");
+        CHECK(ed.mode == MODE_VISUAL);
+        CHECK(ed.sel_active);
+        CHECK(ed.sel_linewise);
+        {
+            size_t fl, fc, tl, tc;
+            editor_selection_range(&ed, &fl, &fc, &tl, &tc);
+            CHECK(fl == 0 && fc == 0 && tl == 0 && tc == 11);
+        }
+        feed(&ed, "y");
+        printf("Test 57 (visual V+y yanks whole line with trailing newline): yank=\"%.*s\"\n",
+               (int)ed.yank_len, ed.yank_text ? ed.yank_text : "");
+        CHECK(ed.mode == MODE_NORMAL);
+        CHECK(!ed.sel_active);
+        CHECK(ed.yank_text != NULL);
+        CHECK(ed.yank_len == 12 && memcmp(ed.yank_text, "hello world\n", 12) == 0);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 58: 'V' + movement + 'd' deletes whole lines (not a mid-line
+     * splice), and the yank is linewise */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ione<CR>two<CR>three<Esc>");
+        ed.cur_line = 0; ed.cur_col = 1;
+        feed(&ed, "Vj"); /* lines 0 and 1 */
+        feed(&ed, "d");
+        printf("Test 58 (visual Vj+d deletes two whole lines):\n"); dump(b);
+        CHECK(ed.mode == MODE_NORMAL);
+        CHECK(b->count == 1);
+        CHECK(strcmp(buffer_line(b, 0)->data, "three") == 0);
+        CHECK(ed.yank_text != NULL && ed.yank_len == 8 &&
+              memcmp(ed.yank_text, "one\ntwo\n", 8) == 0);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 0);
+        feed(&ed, "u");
+        printf("Test 58b (undo restores both lines):\n"); dump(b);
+        CHECK(b->count == 3);
+        CHECK(strcmp(buffer_line(b, 0)->data, "one") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "two") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 59: pasting a linewise yank over a linewise visual selection
+     * replaces those lines in-place (not below the line that slid up) */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ione<CR>two<CR>three<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "V");
+        feed(&ed, "p");
+        CHECK(ed.paste_requested);
+        CHECK(ed.sel_active && ed.sel_linewise);
+        editor_paste_text(&ed, "NEW\n", 4);
+        printf("Test 59 (visual V+p replaces the line in place):\n"); dump(b);
+        CHECK(b->count == 3);
+        CHECK(strcmp(buffer_line(b, 0)->data, "NEW") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "two") == 0);
+        CHECK(strcmp(buffer_line(b, 2)->data, "three") == 0);
+        CHECK(!ed.sel_active);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 59b: linewise replace of the last line keeps earlier lines;
+     * replacing every line leaves no empty-buffer guard behind */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ione<CR>two<Esc>");
+        ed.cur_line = 1; ed.cur_col = 0;
+        feed(&ed, "V");
+        editor_paste_text(&ed, "LAST\n", 5);
+        printf("Test 59b (V+p on last line):\n"); dump(b);
+        CHECK(b->count == 2);
+        CHECK(strcmp(buffer_line(b, 0)->data, "one") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "LAST") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ione<CR>two<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "Vj");
+        editor_paste_text(&ed, "ONLY\n", 5);
+        printf("Test 59c (V+p replacing every line):\n"); dump(b);
+        CHECK(b->count == 1);
+        CHECK(strcmp(buffer_line(b, 0)->data, "ONLY") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 60: switching v <-> V inside visual mode changes whether the
+     * selection is characterwise or linewise */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "iabcdef<Esc>");
+        ed.cur_line = 0; ed.cur_col = 1; /* on 'b' */
+        feed(&ed, "vll"); /* characterwise over "bcd" */
+        CHECK(ed.sel_linewise == 0);
+        {
+            size_t fl, fc, tl, tc;
+            editor_selection_range(&ed, &fl, &fc, &tl, &tc);
+            CHECK(fl == 0 && fc == 1 && tl == 0 && tc == 4);
+        }
+        feed(&ed, "V"); /* switch to linewise */
+        CHECK(ed.sel_linewise == 1);
+        {
+            size_t fl, fc, tl, tc;
+            editor_selection_range(&ed, &fl, &fc, &tl, &tc);
+            CHECK(fl == 0 && fc == 0 && tl == 0 && tc == 6);
+        }
+        feed(&ed, "v"); /* back to characterwise */
+        CHECK(ed.sel_linewise == 0);
+        {
+            size_t fl, fc, tl, tc;
+            editor_selection_range(&ed, &fl, &fc, &tl, &tc);
+            CHECK(fl == 0 && fc == 1 && tl == 0 && tc == 4);
+        }
+        printf("Test 60 (v/V toggle characterwise <-> linewise): ok\n");
         editor_deinit(&ed);
         buffer_free(b);
     }

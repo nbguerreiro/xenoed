@@ -37,8 +37,8 @@
  * to get malformed.
  *
  * The leader key exists specifically so user-defined keybindings can never
- * collide with xenoed's own (h j k l 0 $ i a A I o O x d y p u v / n N :
- * in normal mode, Ctrl+R, y d x p in visual mode): SPACE-then-key is a
+ * collide with xenoed's own (h j k l 0 $ i a A I o O x d y p u v V / n N :
+ * in normal mode, Ctrl+R, y d x p v V in visual mode): SPACE-then-key is a
  * separate two-keystroke namespace that none of those single keys or
  * two-key sequences (dd, yy) touch, by construction -- not something that
  * has to be checked by hand against the existing list every time a new

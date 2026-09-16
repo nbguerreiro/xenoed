@@ -84,6 +84,7 @@ void editor_selection_start(Editor *ed) {
 void editor_selection_clear(Editor *ed) {
     ed->sel_active = 0;
     ed->sel_inclusive = 0;
+    ed->sel_linewise = 0;
 }
 
 int editor_has_selection(const Editor *ed) {
@@ -102,7 +103,10 @@ void editor_selection_range(const Editor *ed, size_t *from_line, size_t *from_co
     } else {
         fl = cl; fc = cc; tl = al; tc = ac;
     }
-    if (ed->sel_inclusive) {
+    if (ed->sel_linewise) {
+        fc = 0;
+        tc = buffer_line(ed->buf, tl)->len;
+    } else if (ed->sel_inclusive) {
         const Line *l = buffer_line(ed->buf, tl);
         tc = utf8_next_boundary(l->data, l->len, tc);
     }
@@ -116,9 +120,22 @@ static void editor_delete_selection(Editor *ed) {
     editor_selection_range(ed, &fl, &fc, &tl, &tc);
     Buffer *b = ed->buf;
 
-    if (fl == tl) {
+    if (ed->sel_linewise) {
+        /* Remove whole lines, same idea as dd -- leave an empty buffer
+         * rather than a zero-line one, and land the cursor on the line
+         * that slid into fl (or the last remaining line if we deleted
+         * through EOF). */
+        for (size_t i = tl; i > fl; i--) buffer_remove_line(b, i);
+        buffer_remove_line(b, fl);
+        if (b->count == 0) buffer_insert_line(b, 0, "", 0);
+        if (fl >= b->count) fl = b->count - 1;
+        ed->cur_line = fl;
+        ed->cur_col = 0;
+    } else if (fl == tl) {
         Line *l = buffer_line(b, fl);
         line_delete_bytes(l, fc, tc - fc);
+        ed->cur_line = fl;
+        ed->cur_col = fc;
     } else {
         Line *first = buffer_line(b, fl);
         const Line *last = buffer_line(b, tl);
@@ -126,10 +143,10 @@ static void editor_delete_selection(Editor *ed) {
         line_delete_bytes(first, fc, first->len - fc);
         line_insert_bytes(first, first->len, last->data + tc, tail_len);
         for (size_t i = tl; i > fl; i--) buffer_remove_line(b, i);
+        ed->cur_line = fl;
+        ed->cur_col = fc;
     }
 
-    ed->cur_line = fl;
-    ed->cur_col = fc;
     editor_selection_clear(ed);
     b->dirty = 1;
 }
@@ -344,6 +361,10 @@ int editor_get_selection_text(const Editor *ed, char **out_text, size_t *out_len
         append_bytes(&out, &len, &cap, last->data, tc);
     }
 
+    /* Linewise yanks end in '\n' so paste treats them as whole lines,
+     * matching yy / dd. Characterwise spans deliberately omit it. */
+    if (ed->sel_linewise) append_bytes(&out, &len, &cap, "\n", 1);
+
     if (!out) out = malloc(1);
     *out_text = out;
     *out_len = len;
@@ -373,13 +394,41 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
 
     editor_checkpoint(ed);
 
-    if (editor_has_selection(ed)) editor_delete_selection(ed);
+    /* Replacing a linewise selection should put new linewise text exactly
+     * where the deleted lines were (index fl), not after the line that
+     * slid into that slot -- which is what ordinary paste-after would do. */
+    int replacing_linewise = 0;
+    int replaced_selection = 0;
+    size_t linewise_replace_at = 0;
+    if (editor_has_selection(ed)) {
+        if (ed->sel_linewise) {
+            size_t fl, fc, tl, tc;
+            editor_selection_range(ed, &fl, &fc, &tl, &tc);
+            (void)fc; (void)tl; (void)tc;
+            replacing_linewise = 1;
+            linewise_replace_at = fl;
+        }
+        editor_delete_selection(ed);
+        replaced_selection = 1;
+    }
 
     int linewise = (text[len - 1] == '\n');
 
     if (linewise) {
         size_t line_start = 0;
-        size_t insert_at = paste_before_requested ? ed->cur_line : ed->cur_line + 1;
+        size_t insert_at;
+        if (replacing_linewise) {
+            insert_at = linewise_replace_at;
+            /* Deleting every line leaves a single empty guard (buffers
+             * aren't allowed to sit at count 0). Drop it so a full-buffer
+             * replace doesn't leave a trailing blank. */
+            if (b->count == 1 && buffer_line(b, 0)->len == 0 && insert_at == 0) {
+                buffer_remove_line(b, 0);
+            }
+            if (insert_at > b->count) insert_at = b->count;
+        } else {
+            insert_at = paste_before_requested ? ed->cur_line : ed->cur_line + 1;
+        }
         size_t first_inserted = insert_at;
         for (size_t i = 0; i < len; i++) {
             if (text[i] == '\n') {
@@ -393,7 +442,9 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
     } else {
         size_t seg_start = 0;
         const Line *l = buffer_line(b, ed->cur_line);
-        size_t paste_col = (insert_mode || paste_before_requested)
+        /* After deleting a selection the cursor sits in the hole -- paste
+         * there (like insert-mode / P), not one character after (normal p). */
+        size_t paste_col = (insert_mode || paste_before_requested || replaced_selection)
                        ? ed->cur_col
                        : utf8_next_boundary(l->data, l->len, ed->cur_col);
         for (size_t i = 0; i <= len; i++) {
@@ -648,6 +699,13 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
         case 'v':
             editor_selection_start(ed);
             ed->sel_inclusive = 1;
+            ed->sel_linewise = 0;
+            ed->mode = MODE_VISUAL;
+            break;
+        case 'V':
+            editor_selection_start(ed);
+            ed->sel_inclusive = 1;
+            ed->sel_linewise = 1;
             ed->mode = MODE_VISUAL;
             break;
         case XENOED_LEADER: ed->leader_pending = 1; break;
@@ -723,6 +781,12 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
         case 'p':
             ed->mode = MODE_NORMAL;
             ed->paste_requested = 1;
+            break;
+        case 'v':
+            ed->sel_linewise = 0;
+            break;
+        case 'V':
+            ed->sel_linewise = 1;
             break;
         case XENOED_LEADER: ed->leader_pending = 1; break;
         default: break;

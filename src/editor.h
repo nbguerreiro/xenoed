@@ -89,9 +89,10 @@ typedef struct {
     int user_command_requested;
     int user_command_index;
 
-    /* Selection state (insert mode only, for now). The anchor is fixed
-     * where the selection began; the moving endpoint is always the current
-     * cursor position, so we only need to track the anchor separately. */
+    /* Selection state (insert-mode Shift+arrow/mouse-drag, or Visual mode).
+     * The anchor is fixed where the selection began; the moving endpoint is
+     * always the current cursor position, so we only need to track the
+     * anchor separately. */
     int sel_active;
     size_t sel_anchor_line;
     size_t sel_anchor_col;
@@ -105,6 +106,13 @@ typedef struct {
      * see the correct inclusive range) happens, once main.c fetches
      * CLIPBOARD content. See editor_selection_range() in editor.c. */
     int sel_inclusive;
+    /* True for linewise visual mode ('V'): the selection covers whole
+     * lines from the smaller of (anchor, cursor) line through the larger,
+     * regardless of column. Yanked text then ends in '\n' (same heuristic
+     * as yy), and delete removes the lines entirely rather than splicing
+     * mid-line. Kept alongside sel_inclusive for the same reason -- visual
+     * 'p' leaves MODE_VISUAL before paste runs. */
+    int sel_linewise;
 
     /* Yank/paste ("registers", vim-speak). Copy is fully local -- editor.c
      * can produce yank_text by itself from the buffer -- but paste needs
