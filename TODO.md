@@ -11,7 +11,7 @@
 - [x] 9. Make search case-insensitive
 - [x] 10. 'V' for selecting lines
 - [x] 11. mouse scroll
-- [ ] 12. ! command
+- [x] 12. ! command
 - [ ] 13. Search and replace
 - [ ] 14. : should work on selection (visual mode)
 - [ ] 15. remember commands

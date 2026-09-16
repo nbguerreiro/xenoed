@@ -63,6 +63,7 @@ make EXTRA_CFLAGS='-DXENOED_FONT="Inter Variable @wght=650,opsz=18"'   # variabl
 | `Ctrl+R` | redo |
 | `v` | enter visual mode (characterwise) |
 | `V` | enter visual mode (linewise) |
+| `!` | filter the whole buffer through a shell command (dmenu prompt) |
 | `/` | search forward (see below) |
 | `n` / `N` | repeat the last search, forward / backward |
 | `:` | open the command picker (see below) |
@@ -86,6 +87,7 @@ whole current line.
 | `y` | yank the selection to CLIPBOARD, cursor moves to its start, back to normal mode |
 | `d` / `x` | cut (yank, then delete) the selection, back to normal mode |
 | `p` | paste CLIPBOARD over the selection, back to normal mode |
+| `!` | filter the selection through a shell command (dmenu prompt) |
 | `v` / `V` | switch to characterwise / linewise while staying in visual mode |
 | `SPACE` then a key | run a user-defined external command on the selection (see below) |
 | `Esc` | cancel -- back to normal mode, buffer unchanged |
@@ -192,6 +194,23 @@ Picking one directly works as expected; so does ignoring the list and just
 typing, e.g. `w notes.txt` -- dmenu returns whatever's currently typed on
 Enter even when nothing's highlighted, so commands taking an argument work
 exactly as they did with the old bar, just entered through dmenu instead.
+
+## Filter (`!`)
+
+Vim-style filter through an arbitrary shell command, prompted with the
+same embedded dmenu as `:` (prompt `!`, empty item list -- type freely):
+
+| Context | Input | On exit 0 |
+|---|---|---|
+| Normal mode `!` | whole buffer | replaces the entire buffer |
+| Visual mode `!` | current selection | replaces just the selection |
+
+The command runs via `/bin/sh -c`, so shell syntax works (`sort -u`,
+`tr 'a-z' 'A-Z'`, `grep -v '^#'`, pipes, etc.). Cancel (Esc in dmenu), an
+empty command, or a non-zero exit leave the buffer unchanged and keep any
+visual selection intact. Successful empty stdout (e.g. `true`, or `grep`
+with no matches) deletes the filtered span. One undo step covers the
+whole replace.
 
 ## External commands
 

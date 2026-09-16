@@ -414,31 +414,18 @@ static void editor_yank_line(Editor *ed) {
     set_status(ed, "1 line yanked");
 }
 
-void editor_paste_text(Editor *ed, const char *text, size_t len) {
+/* Insert text at the cursor without an undo checkpoint. `insert_at_cursor`
+ * forces characterwise paste at cur_col (selection replace / insert mode /
+ * P); otherwise normal-mode p pastes after the character under the cursor.
+ * `replacing_linewise` + `linewise_replace_at` place linewise text exactly
+ * where a just-deleted linewise selection was. */
+static void editor_insert_text(Editor *ed, const char *text, size_t len,
+                               int insert_at_cursor,
+                               int replacing_linewise,
+                               size_t linewise_replace_at) {
     if (len == 0) return;
     Buffer *b = ed->buf;
     int insert_mode = (ed->mode == MODE_INSERT);
-
-    editor_checkpoint(ed);
-
-    /* Replacing a linewise selection should put new linewise text exactly
-     * where the deleted lines were (index fl), not after the line that
-     * slid into that slot -- which is what ordinary paste-after would do. */
-    int replacing_linewise = 0;
-    int replaced_selection = 0;
-    size_t linewise_replace_at = 0;
-    if (editor_has_selection(ed)) {
-        if (ed->sel_linewise) {
-            size_t fl, fc, tl, tc;
-            editor_selection_range(ed, &fl, &fc, &tl, &tc);
-            (void)fc; (void)tl; (void)tc;
-            replacing_linewise = 1;
-            linewise_replace_at = fl;
-        }
-        editor_delete_selection(ed);
-        replaced_selection = 1;
-    }
-
     int linewise = (text[len - 1] == '\n');
 
     if (linewise) {
@@ -469,9 +456,7 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
     } else {
         size_t seg_start = 0;
         const Line *l = buffer_line(b, ed->cur_line);
-        /* After deleting a selection the cursor sits in the hole -- paste
-         * there (like insert-mode / P), not one character after (normal p). */
-        size_t paste_col = (insert_mode || paste_before_requested || replaced_selection)
+        size_t paste_col = insert_at_cursor
                        ? ed->cur_col
                        : utf8_next_boundary(l->data, l->len, ed->cur_col);
         for (size_t i = 0; i <= len; i++) {
@@ -497,8 +482,62 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
     }
 
     b->dirty = 1;
-    paste_before_requested = 0;
     editor_clamp_cursor(ed);
+}
+
+void editor_paste_text(Editor *ed, const char *text, size_t len) {
+    if (len == 0) return;
+    int insert_mode = (ed->mode == MODE_INSERT);
+
+    editor_checkpoint(ed);
+
+    /* Replacing a linewise selection should put new linewise text exactly
+     * where the deleted lines were (index fl), not after the line that
+     * slid into that slot -- which is what ordinary paste-after would do. */
+    int replacing_linewise = 0;
+    int replaced_selection = 0;
+    size_t linewise_replace_at = 0;
+    if (editor_has_selection(ed)) {
+        if (ed->sel_linewise) {
+            size_t fl, fc, tl, tc;
+            editor_selection_range(ed, &fl, &fc, &tl, &tc);
+            (void)fc; (void)tl; (void)tc;
+            replacing_linewise = 1;
+            linewise_replace_at = fl;
+        }
+        editor_delete_selection(ed);
+        replaced_selection = 1;
+    }
+
+    editor_insert_text(ed, text, len,
+                       insert_mode || paste_before_requested || replaced_selection,
+                       replacing_linewise, linewise_replace_at);
+    paste_before_requested = 0;
+}
+
+int editor_replace_selection_text(Editor *ed, const char *text, size_t len) {
+    if (!editor_has_selection(ed)) return 0;
+
+    int replacing_linewise = ed->sel_linewise;
+    size_t linewise_replace_at = 0;
+    if (replacing_linewise) {
+        size_t fl, fc, tl, tc;
+        editor_selection_range(ed, &fl, &fc, &tl, &tc);
+        (void)fc; (void)tl; (void)tc;
+        linewise_replace_at = fl;
+    }
+
+    editor_checkpoint(ed);
+    editor_delete_selection(ed);
+    if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
+
+    if (len > 0) {
+        editor_insert_text(ed, text, len, 1, replacing_linewise, linewise_replace_at);
+    } else {
+        ed->buf->dirty = 1;
+        editor_clamp_cursor(ed);
+    }
+    return 1;
 }
 
 void editor_replace_buffer_text(Editor *ed, const char *text, size_t len) {
@@ -737,6 +776,10 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             break;
         case XENOED_LEADER: ed->leader_pending = 1; break;
         case ':': ed->command_menu_requested = 1; break;
+        case '!':
+            ed->external_filter_requested = 1;
+            ed->external_filter_whole_buffer = 1;
+            break;
         case '/':
             ed->mode = MODE_SEARCH;
             ed->cmdlen = 0;
@@ -814,6 +857,12 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
             break;
         case 'V':
             ed->sel_linewise = 1;
+            break;
+        case '!':
+            /* Keep visual mode + selection until main.c applies (or the
+             * user cancels / the filter fails). */
+            ed->external_filter_requested = 1;
+            ed->external_filter_whole_buffer = 0;
             break;
         case XENOED_LEADER: ed->leader_pending = 1; break;
         default: break;

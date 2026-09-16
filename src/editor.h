@@ -77,6 +77,15 @@ typedef struct {
      * editor_run_command(). Same request-flag shape as search/paste. */
     int command_menu_requested;
 
+    /* '!' filter: main.c shows an embedded dmenu for a shell command, runs
+     * it with either the whole buffer or the current selection on stdin,
+     * and replaces that span with stdout on exit 0. Selection is kept
+     * intact until a successful replace (cancel/failure leave it alone).
+     * external_filter_whole_buffer distinguishes normal-mode ! (buffer)
+     * from visual-mode ! (selection). */
+    int external_filter_requested;
+    int external_filter_whole_buffer;
+
     /* User-defined external command (config.h's XENOED_COMMANDS), matched
      * by either the leader key or the ':' picker. main.c reads these,
      * spawns the subprocess per the matched entry's `input` kind, and
@@ -188,6 +197,13 @@ int editor_get_selection_text(const Editor *ed, char **out_text, size_t *out_len
  * text without a trailing '\n' is inserted inline at the cursor, splitting
  * the current line across any embedded newlines. */
 void editor_paste_text(Editor *ed, const char *text, size_t len);
+
+/* Replaces the active selection with `text` as one undo step. Unlike
+ * editor_paste_text, a successful empty `text` (len == 0) deletes the
+ * selection rather than no-op'ing -- needed for filter commands that
+ * produce no stdout (e.g. `true`, `grep` with no matches). Returns 0 if
+ * there is no active selection. Leaves MODE_NORMAL on success. */
+int editor_replace_selection_text(Editor *ed, const char *text, size_t len);
 
 /* Copy/cut for mouse- or menu-driven callers (the right-click context
  * menu), deliberately NOT sharing code with visual-mode 'y' despite doing

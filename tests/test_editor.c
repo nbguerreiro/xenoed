@@ -1278,6 +1278,89 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 63: normal-mode '!' requests a whole-buffer external filter */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "!");
+        printf("Test 63 (normal ! requests buffer filter): requested=%d whole=%d\n",
+               ed.external_filter_requested, ed.external_filter_whole_buffer);
+        CHECK(ed.external_filter_requested);
+        CHECK(ed.external_filter_whole_buffer);
+        CHECK(ed.mode == MODE_NORMAL);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 64: visual-mode '!' requests a selection filter and keeps the
+     * selection active until main.c applies (or cancel/fail) */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "vll");
+        feed(&ed, "!");
+        printf("Test 64 (visual ! requests selection filter): requested=%d whole=%d mode=%d sel=%d\n",
+               ed.external_filter_requested, ed.external_filter_whole_buffer,
+               ed.mode, ed.sel_active);
+        CHECK(ed.external_filter_requested);
+        CHECK(!ed.external_filter_whole_buffer);
+        CHECK(ed.mode == MODE_VISUAL);
+        CHECK(ed.sel_active);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 65: editor_replace_selection_text replaces the span as one
+     * undo step, and empty output deletes the selection */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ipear<CR>apple<CR>orange<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "Vjj"); /* all three lines, linewise */
+        CHECK(editor_replace_selection_text(&ed, "apple\norange\npear\n", 18));
+        printf("Test 65 (replace_selection_text sorts lines):\n"); dump(b);
+        CHECK(ed.mode == MODE_NORMAL);
+        CHECK(!ed.sel_active);
+        CHECK(b->count == 3);
+        CHECK(strcmp(buffer_line(b, 0)->data, "apple") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "orange") == 0);
+        CHECK(strcmp(buffer_line(b, 2)->data, "pear") == 0);
+        feed(&ed, "u");
+        printf("Test 65b (undo restores pre-filter text):\n"); dump(b);
+        CHECK(strcmp(buffer_line(b, 0)->data, "pear") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "apple") == 0);
+        CHECK(strcmp(buffer_line(b, 2)->data, "orange") == 0);
+
+        ed.cur_line = 1; ed.cur_col = 0;
+        feed(&ed, "V");
+        CHECK(editor_replace_selection_text(&ed, "", 0));
+        printf("Test 65c (empty stdout deletes the selection):\n"); dump(b);
+        CHECK(b->count == 2);
+        CHECK(strcmp(buffer_line(b, 0)->data, "pear") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "orange") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 66: replace_selection_text with no selection is a no-op */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        CHECK(!editor_replace_selection_text(&ed, "x", 1));
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0);
+        printf("Test 66 (replace_selection_text no-op without selection): ok\n");
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

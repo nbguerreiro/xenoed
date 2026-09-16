@@ -454,6 +454,85 @@ static char *run_filter(const char *script, const char *filename,
     return out;
 }
 
+/* Like run_filter, but runs `command` via /bin/sh -c so dmenu-entered
+ * filters can use shell syntax (pipes, quotes, flags). Success with empty
+ * stdout returns a non-NULL buffer with *out_len == 0; failure returns NULL. */
+static char *run_shell_filter(const char *command,
+                              const char *input, size_t input_len,
+                              size_t *out_len) {
+    int inpipe[2], outpipe[2];
+    if (pipe(inpipe) != 0) return NULL;
+    if (pipe(outpipe) != 0) { close(inpipe[0]); close(inpipe[1]); return NULL; }
+
+    pid_t script_pid = fork();
+    if (script_pid < 0) {
+        close(inpipe[0]); close(inpipe[1]);
+        close(outpipe[0]); close(outpipe[1]);
+        return NULL;
+    }
+    if (script_pid == 0) {
+        dup2(inpipe[0], STDIN_FILENO);
+        dup2(outpipe[1], STDOUT_FILENO);
+        close(inpipe[0]); close(inpipe[1]);
+        close(outpipe[0]); close(outpipe[1]);
+        execl("/bin/sh", "sh", "-c", command, (char *)NULL);
+        _exit(127);
+    }
+
+    pid_t writer_pid = fork();
+    if (writer_pid == 0) {
+        close(inpipe[0]);
+        close(outpipe[0]); close(outpipe[1]);
+        size_t written = 0;
+        while (written < input_len) {
+            ssize_t n = write(inpipe[1], input + written, input_len - written);
+            if (n <= 0) break;
+            written += (size_t)n;
+        }
+        close(inpipe[1]);
+        _exit(0);
+    }
+
+    close(inpipe[0]);
+    close(inpipe[1]);
+    close(outpipe[1]);
+
+    char *out = NULL;
+    size_t outlen = 0, outcap = 0;
+    char chunk[4096];
+    ssize_t n;
+    while ((n = read(outpipe[0], chunk, sizeof(chunk))) > 0) {
+        if (outlen + (size_t)n > outcap) {
+            outcap = (outlen + (size_t)n) * 2 + 64;
+            char *new_out = realloc(out, outcap);
+            if (!new_out) {
+                free(out);
+                close(outpipe[0]);
+                waitpid(script_pid, NULL, 0);
+                if (writer_pid > 0) waitpid(writer_pid, NULL, 0);
+                return NULL;
+            }
+            out = new_out;
+        }
+        memcpy(out + outlen, chunk, (size_t)n);
+        outlen += (size_t)n;
+    }
+    close(outpipe[0]);
+
+    int status = 0;
+    waitpid(script_pid, &status, 0);
+    if (writer_pid > 0) waitpid(writer_pid, NULL, 0);
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        free(out);
+        return NULL;
+    }
+
+    *out_len = outlen;
+    if (!out) out = malloc(1);
+    return out;
+}
+
 static void run_user_command(Editor *ed, const char *filename) {
     int idx = ed->user_command_index;
     if (idx < 0) return;
@@ -638,6 +717,73 @@ static void show_command_menu(Display *dpy, Window win, Editor *ed) {
 
     editor_run_command(ed, choice);
     free(choice);
+}
+
+static void run_external_filter(Display *dpy, Window win, Editor *ed) {
+    int whole_buffer = ed->external_filter_whole_buffer;
+
+    if (!whole_buffer && !editor_has_selection(ed)) {
+        snprintf(ed->status, sizeof(ed->status), "E: ! needs a selection");
+        return;
+    }
+
+    char *command = run_dmenu(dpy, win, NULL, 0, "!");
+    if (!command) {
+        snprintf(ed->status, sizeof(ed->status), "Filter cancelled");
+        return;
+    }
+    if (command[0] == '\0') {
+        snprintf(ed->status, sizeof(ed->status), "E: no external command entered");
+        free(command);
+        return;
+    }
+
+    char *input_text = NULL;
+    size_t input_len = 0;
+
+    if (whole_buffer) {
+        Buffer *b = ed->buf;
+        size_t total = 0;
+        for (size_t i = 0; i < b->count; i++) total += buffer_line(b, i)->len + 1;
+        input_text = malloc(total ? total : 1);
+        if (!input_text) {
+            snprintf(ed->status, sizeof(ed->status), "E: filter failed");
+            free(command);
+            return;
+        }
+        size_t off = 0;
+        for (size_t i = 0; i < b->count; i++) {
+            const Line *l = buffer_line(b, i);
+            memcpy(input_text + off, l->data, l->len);
+            off += l->len;
+            input_text[off++] = '\n';
+        }
+        input_len = total;
+    } else {
+        if (!editor_get_selection_text(ed, &input_text, &input_len)) {
+            snprintf(ed->status, sizeof(ed->status), "E: unable to read selection");
+            free(command);
+            return;
+        }
+    }
+
+    size_t output_len = 0;
+    char *output = run_shell_filter(command, input_text, input_len, &output_len);
+    free(input_text);
+    free(command);
+
+    if (!output) {
+        snprintf(ed->status, sizeof(ed->status), "E: filter failed");
+        return;
+    }
+
+    if (whole_buffer) {
+        editor_replace_buffer_text(ed, output, output_len);
+    } else {
+        editor_replace_selection_text(ed, output, output_len);
+    }
+    free(output);
+    snprintf(ed->status, sizeof(ed->status), "Filter applied");
 }
 
 static EditorSpecialKey classify_keysym(KeySym ks, unsigned int state) {
@@ -874,6 +1020,10 @@ int main(int argc, char **argv) {
                     ed.command_menu_requested = 0;
                     show_command_menu(dpy, win, &ed);
                     if (ed.want_quit) { running = 0; break; }
+                }
+                if (ed.external_filter_requested) {
+                    ed.external_filter_requested = 0;
+                    run_external_filter(dpy, win, &ed);
                 }
                 if (ed.user_command_requested) {
                     ed.user_command_requested = 0;
