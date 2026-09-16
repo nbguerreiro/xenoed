@@ -28,6 +28,14 @@
 #define XENOED_LINE_SPACING 1.50
 #endif
 
+/* Lines moved per mouse-wheel click (X11 Button4/Button5). Override at
+ * compile time if desired, for example:
+ *   make EXTRA_CFLAGS='-DXENOED_SCROLL_LINES=5'
+ */
+#ifndef XENOED_SCROLL_LINES
+#define XENOED_SCROLL_LINES 3
+#endif
+
 /* --- External commands -------------------------------------------------
  *
  * A compile-time table of external scripts, each optionally reachable from

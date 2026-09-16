@@ -10,7 +10,7 @@
 - [x] 8. Replace the editor's search prompt with dmenu for a more consistent command/search interface
 - [x] 9. Make search case-insensitive
 - [x] 10. 'V' for selecting lines
-- [ ] 11. mouse scroll
+- [x] 11. mouse scroll
 - [ ] 12. ! command
 - [ ] 13. Search and replace
 - [ ] 14. : should work on selection (visual mode)

@@ -75,6 +75,33 @@ void editor_ensure_visible(Editor *ed, size_t visible_rows) {
     }
 }
 
+void editor_scroll_by(Editor *ed, int delta, size_t visible_rows) {
+    if (visible_rows == 0 || delta == 0) return;
+
+    size_t count = ed->buf->count;
+    size_t max_top = (count > visible_rows) ? count - visible_rows : 0;
+
+    if (delta < 0) {
+        size_t up = (size_t)(-delta);
+        ed->top_line = (ed->top_line > up) ? ed->top_line - up : 0;
+    } else {
+        size_t down = (size_t)delta;
+        if (ed->top_line >= max_top) ed->top_line = max_top;
+        else if (ed->top_line + down > max_top) ed->top_line = max_top;
+        else ed->top_line += down;
+    }
+
+    /* Keep the cursor inside the viewport; otherwise the next redraw's
+     * editor_ensure_visible() would snap top_line back to the cursor. */
+    if (ed->cur_line < ed->top_line) {
+        ed->cur_line = ed->top_line;
+    } else if (ed->cur_line >= ed->top_line + visible_rows) {
+        ed->cur_line = ed->top_line + visible_rows - 1;
+        if (count > 0 && ed->cur_line >= count) ed->cur_line = count - 1;
+    }
+    editor_clamp_cursor(ed);
+}
+
 void editor_selection_start(Editor *ed) {
     ed->sel_active = 1;
     ed->sel_anchor_line = ed->cur_line;

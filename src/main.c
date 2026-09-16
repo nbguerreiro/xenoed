@@ -801,6 +801,16 @@ int main(int argc, char **argv) {
                     process_editor_side_effects(dpy, win, &ed, &sel);
                     sync_primary_ownership(dpy, win, &ed, &sel);
                     redraw(&rs, &bb, &ed, width, height);
+                } else if (ev.xbutton.button == Button4 || ev.xbutton.button == Button5) {
+                    /* Classic X11 mouse wheel: Button4 = up, Button5 = down.
+                     * Works in any mode; cursor is kept in the viewport so
+                     * ensure_visible on the next redraw doesn't undo it. */
+                    int visible_rows = render_visible_rows(&rs, height);
+                    int delta = (ev.xbutton.button == Button4)
+                        ? -XENOED_SCROLL_LINES : XENOED_SCROLL_LINES;
+                    editor_scroll_by(&ed, delta, (size_t)visible_rows);
+                    sync_primary_ownership(dpy, win, &ed, &sel);
+                    redraw(&rs, &bb, &ed, width, height);
                 }
                 break;
 

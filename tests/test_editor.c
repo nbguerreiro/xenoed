@@ -1223,6 +1223,61 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 61: editor_scroll_by moves top_line and keeps the cursor inside
+     * the new viewport (so ensure_visible won't undo a wheel scroll) */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        for (int i = 0; i < 20; i++) {
+            char line[16];
+            int n = snprintf(line, sizeof(line), "L%d", i);
+            if (i == 0) line_set(buffer_line(b, 0), line, (size_t)n);
+            else buffer_insert_line(b, (size_t)i, line, (size_t)n);
+        }
+        ed.cur_line = 0;
+        ed.cur_col = 0;
+        ed.top_line = 0;
+        editor_scroll_by(&ed, 5, 10); /* scroll down 5, viewport 10 rows */
+        printf("Test 61 (scroll_by down): top=%zu cur=%zu\n", ed.top_line, ed.cur_line);
+        CHECK(ed.top_line == 5);
+        CHECK(ed.cur_line == 5); /* was above the new viewport; clamped in */
+        editor_scroll_by(&ed, -3, 10);
+        printf("Test 61b (scroll_by up): top=%zu cur=%zu\n", ed.top_line, ed.cur_line);
+        CHECK(ed.top_line == 2);
+        CHECK(ed.cur_line == 5); /* still inside [2, 12); unchanged */
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 62: scroll_by clamps at the ends -- can't go above 0, and
+     * can't leave an empty region past the last full page */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        for (int i = 0; i < 15; i++) {
+            char line[16];
+            int n = snprintf(line, sizeof(line), "L%d", i);
+            if (i == 0) line_set(buffer_line(b, 0), line, (size_t)n);
+            else buffer_insert_line(b, (size_t)i, line, (size_t)n);
+        }
+        ed.cur_line = 0;
+        ed.top_line = 0;
+        editor_scroll_by(&ed, -10, 10);
+        CHECK(ed.top_line == 0);
+        CHECK(ed.cur_line == 0);
+        editor_scroll_by(&ed, 100, 10); /* max_top = 15-10 = 5 */
+        printf("Test 62 (scroll_by clamps at EOF): top=%zu cur=%zu\n", ed.top_line, ed.cur_line);
+        CHECK(ed.top_line == 5);
+        CHECK(ed.cur_line == 5);
+        /* Short buffer: everything fits, scroll is a no-op on top_line */
+        editor_scroll_by(&ed, 3, 20);
+        CHECK(ed.top_line == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

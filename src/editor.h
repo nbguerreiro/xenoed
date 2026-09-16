@@ -159,6 +159,12 @@ void editor_clamp_cursor(Editor *ed);
  * lines. Call once per frame before rendering, from the render layer. */
 void editor_ensure_visible(Editor *ed, size_t visible_rows);
 
+/* Scroll the viewport by `delta` lines (negative = up, positive = down),
+ * clamped so top_line never past the last full page. The cursor is kept
+ * inside the new viewport so a following editor_ensure_visible() won't
+ * undo the scroll. Used by main.c for mouse-wheel Button4/Button5. */
+void editor_scroll_by(Editor *ed, int delta, size_t visible_rows);
+
 /* Selection (insert mode only). Exposed publicly because the mouse-drag
  * handler in main.c manipulates it directly, outside editor_handle_key. */
 void editor_selection_start(Editor *ed);   /* anchor = current cursor position */

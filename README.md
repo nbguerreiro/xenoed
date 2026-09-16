@@ -112,7 +112,10 @@ normal-mode equivalent):
   wherever the cursor was when you started holding Shift. A plain arrow
   (no Shift) collapses the selection and moves normally.
 - **Mouse**: click and drag to select. A plain click without dragging just
-  moves the cursor.
+  moves the cursor. The mouse wheel scrolls the viewport by
+  `XENOED_SCROLL_LINES` lines (default 3; override at compile time), in
+  any mode; the cursor stays inside the visible area so the next redraw
+  doesn't snap the view back.
 - With an active selection, typing replaces it; `Backspace` deletes it
   (without also deleting an extra character); `Enter` replaces it with a
   line break. Selections spanning multiple lines are supported.
