@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "buffer.h"
+#include "cmdhist.h"
 #include "config.h"
 #include "editor.h"
 #include "render.h"
@@ -709,14 +710,46 @@ static void show_context_menu(Display *dpy, Window win, Editor *ed) {
 }
 
 static void show_command_menu(Display *dpy, Window win, Editor *ed) {
-    int count = 0;
-    const char *const *names = editor_command_names(&count);
+    CmdHist hist;
+    cmdhist_init(&hist);
+    char *hist_path = cmdhist_path("colon_hist");
+    if (hist_path) cmdhist_load(&hist, hist_path);
 
-    char *choice = run_dmenu(dpy, win, names, count, ":");
-    if (!choice) return;
+    int catalog_n = 0;
+    const char *const *catalog = editor_command_names(&catalog_n);
 
-    editor_run_command(ed, choice);
-    free(choice);
+    /* Most-used remembered commands float to the top; catalog entries
+     * that aren't already in the history follow in their usual order. */
+    int cap = hist.n + catalog_n;
+    const char **items = NULL;
+    int n = 0;
+    if (cap > 0) {
+        items = malloc((size_t)cap * sizeof(*items));
+        if (items) {
+            for (int i = 0; i < hist.n; i++) items[n++] = hist.entries[i].cmd;
+            for (int i = 0; i < catalog_n; i++) {
+                int found = 0;
+                for (int j = 0; j < hist.n; j++) {
+                    if (strcmp(catalog[i], hist.entries[j].cmd) == 0) {
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found) items[n++] = catalog[i];
+            }
+        }
+    }
+
+    char *choice = run_dmenu(dpy, win, items, n, ":");
+    free(items);
+    if (choice) {
+        editor_run_command(ed, choice);
+        cmdhist_bump(&hist, choice);
+        if (hist_path) cmdhist_save(&hist, hist_path);
+        free(choice);
+    }
+    free(hist_path);
+    cmdhist_free(&hist);
 }
 
 static void run_external_filter(Display *dpy, Window win, Editor *ed) {
@@ -727,14 +760,33 @@ static void run_external_filter(Display *dpy, Window win, Editor *ed) {
         return;
     }
 
-    char *command = run_dmenu(dpy, win, NULL, 0, "!");
+    CmdHist hist;
+    cmdhist_init(&hist);
+    char *hist_path = cmdhist_path("bang_hist");
+    if (hist_path) cmdhist_load(&hist, hist_path);
+
+    const char **items = NULL;
+    int n = 0;
+    if (hist.n > 0) {
+        items = malloc((size_t)hist.n * sizeof(*items));
+        if (items) {
+            for (int i = 0; i < hist.n; i++) items[n++] = hist.entries[i].cmd;
+        }
+    }
+
+    char *command = run_dmenu(dpy, win, items, n, "!");
+    free(items);
     if (!command) {
         snprintf(ed->status, sizeof(ed->status), "Filter cancelled");
+        free(hist_path);
+        cmdhist_free(&hist);
         return;
     }
     if (command[0] == '\0') {
         snprintf(ed->status, sizeof(ed->status), "E: no external command entered");
         free(command);
+        free(hist_path);
+        cmdhist_free(&hist);
         return;
     }
 
@@ -749,6 +801,8 @@ static void run_external_filter(Display *dpy, Window win, Editor *ed) {
         if (!input_text) {
             snprintf(ed->status, sizeof(ed->status), "E: filter failed");
             free(command);
+            free(hist_path);
+            cmdhist_free(&hist);
             return;
         }
         size_t off = 0;
@@ -763,6 +817,8 @@ static void run_external_filter(Display *dpy, Window win, Editor *ed) {
         if (!editor_get_selection_text(ed, &input_text, &input_len)) {
             snprintf(ed->status, sizeof(ed->status), "E: unable to read selection");
             free(command);
+            free(hist_path);
+            cmdhist_free(&hist);
             return;
         }
     }
@@ -770,10 +826,12 @@ static void run_external_filter(Display *dpy, Window win, Editor *ed) {
     size_t output_len = 0;
     char *output = run_shell_filter(command, input_text, input_len, &output_len);
     free(input_text);
-    free(command);
 
     if (!output) {
         snprintf(ed->status, sizeof(ed->status), "E: filter failed");
+        free(command);
+        free(hist_path);
+        cmdhist_free(&hist);
         return;
     }
 
@@ -783,6 +841,14 @@ static void run_external_filter(Display *dpy, Window win, Editor *ed) {
         editor_replace_selection_text(ed, output, output_len);
     }
     free(output);
+
+    /* Only successful filters are remembered, so failed experiments
+     * don't pollute the bang menu. */
+    cmdhist_bump(&hist, command);
+    if (hist_path) cmdhist_save(&hist, hist_path);
+    free(command);
+    free(hist_path);
+    cmdhist_free(&hist);
     snprintf(ed->status, sizeof(ed->status), "Filter applied");
 }
 

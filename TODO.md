@@ -12,8 +12,8 @@
 - [x] 10. 'V' for selecting lines
 - [x] 11. mouse scroll
 - [x] 12. ! command
-- [ ] 13. Search and replace
+- [x] 13. remember commands
 - [ ] 14. : should work on selection (visual mode)
-- [ ] 15. remember commands
+- [ ] 15. Search and replace
 - [ ] 16. spell
 - [ ] 17. tags

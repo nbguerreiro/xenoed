@@ -33,7 +33,7 @@ fanalyzer: CFLAGS += -g -O1 -fanalyzer
 
 sanitize: CFLAGS += -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
 
-SRC := src/main.c src/editor.c src/buffer.c src/render.c src/repeat.c
+SRC := src/main.c src/editor.c src/buffer.c src/render.c src/repeat.c src/cmdhist.c
 
 all: main
 debug: main
@@ -49,11 +49,15 @@ main: $(SRC)
 $(TEST_BIN): $(TEST_SRC)
 	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o $@ $(TEST_SRC) -Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key
 
+test-cmdhist: tests/test_cmdhist.c src/cmdhist.c
+	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o tests/test_cmdhist tests/test_cmdhist.c src/cmdhist.c
+	./tests/test_cmdhist
+
 lint:
 	cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr $(SRC)
 
 clean:
-	rm -rfv $(BIN) $(TEST_BIN) reports src/*.o *.s *.bc *.db *.log
+	rm -rfv $(BIN) $(TEST_BIN) tests/test_cmdhist reports src/*.o *.s *.bc *.db *.log
 
 install:
 	cp $(BIN) ${HOME}/.local/bin/xenoed

@@ -195,6 +195,11 @@ typing, e.g. `w notes.txt` -- dmenu returns whatever's currently typed on
 Enter even when nothing's highlighted, so commands taking an argument work
 exactly as they did with the old bar, just entered through dmenu instead.
 
+Every non-empty choice is remembered in `~/.xenoed/colon_hist`. Next time
+you open `:`, most-used commands float to the top of the dmenu list
+(builtins and named `XENOED_COMMANDS` entries that aren't already in the
+history still appear below).
+
 ## Filter (`!`)
 
 Vim-style filter through an arbitrary shell command, prompted with the
@@ -211,6 +216,10 @@ empty command, or a non-zero exit leave the buffer unchanged and keep any
 visual selection intact. Successful empty stdout (e.g. `true`, or `grep`
 with no matches) deletes the filtered span. One undo step covers the
 whole replace.
+
+Successful filters are remembered in `~/.xenoed/bang_hist` and float to
+the top of the next `!` dmenu prompt (most-used first). Failed or
+cancelled commands are not recorded.
 
 ## External commands
 
