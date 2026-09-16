@@ -13,7 +13,16 @@
 - [x] 11. mouse scroll
 - [x] 12. ! command
 - [x] 13. remember commands
-- [ ] 14. : should work on selection (visual mode)
+- [x] 14. : should work on selection (visual mode)
 - [x] 15. Search and replace
-- [ ] 16. spell
-- [ ] 17. tags
+- [ ] 16. XENOED_COMMANDS should accept commands starting with 'leader', 'control', or just plain letters.
+  { "com1", "external_com", '<leader>e', CMD_INPUT_BUFFER },
+  { "com2", "external_com", '<c>e', CMD_INPUT_BUFFER },
+  { "com3", "external_com", 'e', CMD_INPUT_BUFFER },
+  { "com4", "external_com", 0, CMD_INPUT_BUFFER },
+- [ ] 17. block cursor should be a hollow rectangle when window is not in focus
+- [ ] 18. tags
+- [ ] 19. spell
+
+
+
