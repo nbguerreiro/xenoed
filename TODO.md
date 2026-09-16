@@ -15,7 +15,7 @@
 - [x] 13. remember commands
 - [x] 14. : should work on selection (visual mode)
 - [x] 15. Search and replace
-- [ ] 16. XENOED_COMMANDS should accept commands starting with 'leader', 'control', or just plain letters.
+- [x] 16. XENOED_COMMANDS should accept commands starting with 'leader', 'control', or just plain letters.
   { "com1", "external_com", '<leader>e', CMD_INPUT_BUFFER },
   { "com2", "external_com", '<c>e', CMD_INPUT_BUFFER },
   { "com3", "external_com", 'e', CMD_INPUT_BUFFER },

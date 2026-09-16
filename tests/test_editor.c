@@ -920,7 +920,11 @@ int main(void) {
         int idx = -1;
         char key = 0;
         for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
-            if (XENOED_COMMANDS[i].key != 0) { idx = i; key = XENOED_COMMANDS[i].key; break; }
+            if (XENOED_COMMANDS[i].key.mod == XENOED_MOD_LEADER) {
+                idx = i;
+                key = XENOED_COMMANDS[i].key.key;
+                break;
+            }
         }
         CHECK(idx >= 0);
         char keys[3] = { ' ', key, '\0' };
@@ -1522,6 +1526,113 @@ int main(void) {
                ed.command_menu_requested, ed.mode);
         CHECK(ed.command_menu_requested);
         CHECK(ed.mode == MODE_VISUAL);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 76: a plain-letter binding (XENOED_KEY_PLAIN) fires from normal
+     * mode with no leader key involved */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        char key = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].key.mod == XENOED_MOD_PLAIN) {
+                idx = i;
+                key = XENOED_COMMANDS[i].key.key;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        char keys[2] = { key, '\0' };
+        feed(&ed, keys);
+        printf("Test 76 (plain key requests a user command): requested=%d index=%d\n",
+               ed.user_command_requested, ed.user_command_index);
+        CHECK(ed.user_command_requested);
+        CHECK(ed.user_command_index == idx);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 77: a Ctrl binding (XENOED_KEY_CTRL) fires when the matching
+     * ASCII control character (Ctrl+T = 0x14) arrives -- the representation
+     * main.c synthesizes for Ctrl+letter -- and, since the shipped ctrl
+     * example is CMD_INPUT_SELECTION, entering it from visual mode with a
+     * live selection requests it and drops back to normal mode */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        char key = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].key.mod == XENOED_MOD_CTRL) {
+                idx = i;
+                key = XENOED_COMMANDS[i].key.key;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "vll"); /* select "hel" */
+        CHECK(ed.mode == MODE_VISUAL);
+        char ctrlkeys[2] = { (char)(key - 'a' + 1), '\0' };
+        feed(&ed, ctrlkeys);
+        printf("Test 77 (Ctrl+key requests a user command): requested=%d index=%d mode=%d\n",
+               ed.user_command_requested, ed.user_command_index, ed.mode);
+        CHECK(ed.user_command_requested);
+        CHECK(ed.user_command_index == idx);
+        CHECK(ed.mode == MODE_NORMAL);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 78: leader-pending consumes the next key BEFORE plain binding
+     * dispatch, so "leader + a plain-bound key" is a no-op (SPACE+'e'
+     * isn't bound; only bare 'e' is) rather than firing the plain command */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int plain_idx = -1;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].key.mod == XENOED_MOD_PLAIN) {
+                plain_idx = i;
+                break;
+            }
+        }
+        CHECK(plain_idx >= 0);
+        int leader_idx = -1;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].key.mod == XENOED_MOD_LEADER) {
+                leader_idx = i;
+                break;
+            }
+        }
+        CHECK(leader_idx >= 0);
+        char seq[3] = { ' ', XENOED_COMMANDS[plain_idx].key.key, '\0' };
+        feed(&ed, seq);
+        printf("Test 78 (leader+plain-bound key is a no-op): requested=%d\n",
+               ed.user_command_requested);
+        CHECK(!ed.user_command_requested);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 79: an unbound Ctrl combination is a silent no-op, same as any
+     * other unrecognized key (Ctrl+U = 0x15 has no XENOED_KEY_CTRL('u')) */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        char ctrlkeys[2] = { 0x15, '\0' };
+        feed(&ed, ctrlkeys);
+        printf("Test 79 (unbound Ctrl key is a no-op): requested=%d\n",
+               ed.user_command_requested);
+        CHECK(!ed.user_command_requested);
         editor_deinit(&ed);
         buffer_free(b);
     }

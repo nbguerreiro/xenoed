@@ -39,20 +39,43 @@
 /* --- External commands -------------------------------------------------
  *
  * A compile-time table of external scripts, each optionally reachable from
- * the ':' picker (by name), a direct keypress (leader key + one letter),
- * or both. Same philosophy as the font above: this is data the compiler
- * checks, not a runtime config file with its own parser and its own ways
- * to get malformed.
+ * the ':' picker (by name), a direct keypress, or both. Same philosophy as
+ * the font above: this is data the compiler checks, not a runtime config
+ * file with its own parser and its own ways to get malformed.
  *
- * The leader key exists specifically so user-defined keybindings can never
- * collide with xenoed's own (h j k l 0 $ i a A I o O x d y p u v V ! / n N :
- * in normal mode, Ctrl+R, y d x p v V ! in visual mode): SPACE-then-key is a
- * separate two-keystroke namespace that none of those single keys or
- * two-key sequences (dd, yy) touch, by construction -- not something that
- * has to be checked by hand against the existing list every time a new
- * command is added.
+ * A binding is a modifier plus a key. Three bindings exist:
+ *   - leader: XENOED_LEADER then the key (a separate two-keystroke
+ *     namespace that can't collide with xenoed's own single keys by
+ *     construction);
+ *   - control: Ctrl + key (the key is matched case-insensitively);
+ *   - plain: the bare key -- these CAN shadow xenoed's built-ins, at
+ *     your discretion; xenoed warns at startup if you do.
+ * Or no binding at all -- reachable only via the ':' picker.
  */
 #define XENOED_LEADER ' '
+
+typedef enum {
+    XENOED_MOD_NONE,   /* no direct keybinding: the ':' picker only */
+    XENOED_MOD_LEADER, /* XENOED_LEADER then the key */
+    XENOED_MOD_CTRL,   /* Ctrl + key */
+    XENOED_MOD_PLAIN   /* the plain key alone */
+} XenoedKeyModifier;
+
+typedef struct {
+    XenoedKeyModifier mod;
+    char key;          /* the key's character; meaningful unless mod == XENOED_MOD_NONE */
+} XenoedKey;
+
+/* Config-table convenience spellings:
+ *   XENOED_KEY_LEADER('i')  -- SPACE then i
+ *   XENOED_KEY_CTRL('t')    -- Ctrl+t
+ *   XENOED_KEY_PLAIN('e')   -- e alone
+ *   XENOED_KEY_NONE         -- ':' picker only
+ */
+#define XENOED_KEY_NONE      { XENOED_MOD_NONE, 0 }
+#define XENOED_KEY_LEADER(k) { XENOED_MOD_LEADER, (k) }
+#define XENOED_KEY_CTRL(k)   { XENOED_MOD_CTRL, (k) }
+#define XENOED_KEY_PLAIN(k)  { XENOED_MOD_PLAIN, (k) }
 
 typedef enum {
     /* No stdin. xenoed does NOT wait for the script -- it's spawned fully
@@ -84,9 +107,10 @@ typedef struct {
     const char *script; /* passed to execvp -- a bare name searches $PATH,
                           * anything containing '/' is used as-is, exactly
                           * like grep/dmenu are already invoked elsewhere */
-    char key;           /* pressed right after the leader key to run this
-                          * directly, e.g. 'i' for SPACE then i; 0 = no
-                          * direct keybinding, ':' picker only */
+    XenoedKey key;      /* how to run this directly: XENOED_KEY_LEADER('i')
+                          * for SPACE then i, XENOED_KEY_CTRL('i') for Ctrl+i,
+                          * XENOED_KEY_PLAIN('i') for i alone, or
+                          * XENOED_KEY_NONE for ':' picker only */
     XenoedCommandInput input;
 } XenoedCommand;
 
@@ -105,24 +129,35 @@ typedef struct {
  * their own). A sentinel avoids that regardless of how many real entries
  * exist. KEEP THE SENTINEL as the last entry.
  *
- * Real (uncommented), but harmless by construction: "your-script-here"
- * doesn't exist on any real system, so these entries can never
- * accidentally do something unexpected to your buffer before you've
+ * Real (uncommented), but harmless by construction: "indent.sh" and
+ * "your-script-here" don't exist on any real system, so these entries can
+ * never accidentally do something unexpected to your buffer before you've
  * replaced them with real scripts of your own -- output only ever gets
  * applied on a CONFIRMED exit-0 success (see main.c's run_filter()), so a
  * missing script just fails closed with a status message, regardless of
  * input kind. Kept uncommented specifically so the dispatch mechanism
- * itself -- the leader key, the ':' picker, the "needs a selection" check
- * -- is exercised and testable even before you've written a single script.
- * Replace the script paths (and add your own entries) freely; SPACE then
- * 't'/'b'/'s', or ":" then the name, will show each one is wired up
- * correctly and safely before anything real is behind it.
+ * itself -- the leader key, the Ctrl key, the plain key, the ':' picker,
+ * the "needs a selection" check -- is exercised and testable even before
+ * you've written a single script. Replace the script paths (and add your
+ * own entries) freely; SPACE then 'i', Ctrl+t, plain 'e', or ":" then the
+ * name, will each show its binding is wired up correctly and safely before
+ * anything real is behind it. 'e' happens not to collide with any of
+ * xenoed's own keys; a plain binding that DOES (say 'j' or ':' in
+ * normal mode) prints a startup warning to stderr as a heads-up, then
+ * shadows the built-in -- the plain namespace is deliberately unchecked.
  */
 static const XenoedCommand XENOED_COMMANDS[] = {
-    { "indent", "indent.sh", 'i', CMD_INPUT_BUFFER },
-    { "format_table", "column -t -s \'|\' -o \'|\'", 0, CMD_INPUT_SELECTION },
+    { "indent",         "indent.sh",                  XENOED_KEY_LEADER('i'), CMD_INPUT_BUFFER },
 
-    { NULL, NULL, 0, CMD_INPUT_NONE } /* sentinel -- must stay last */
+    { "lowercase",   "perl -pe '$_ = lc'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+
+    /*{ "script",   "/home/fx/src/x/xenoed/script.sh", XENOED_KEY_CTRL('t'),   CMD_INPUT_SELECTION },*/
+
+    /*{ "example_plain",  "your-script-here",           XENOED_KEY_PLAIN('e'),  CMD_INPUT_NONE },*/
+    /*{ "example_picker", "your-script-here",           XENOED_KEY_NONE,        CMD_INPUT_BUFFER },*/
+
+    { NULL, NULL, XENOED_KEY_NONE, CMD_INPUT_NONE } /* sentinel -- must stay last */
 };
 
 #endif

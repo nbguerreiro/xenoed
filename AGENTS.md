@@ -49,6 +49,15 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
 - New normal-mode keybindings belong in `editor.c` `handle_normal()`; remember
   repeat.c shadows the chars listed above. Add `:` commands to both
   `editor_run_command()` and `editor_command_names()` (by design, not generated).
+- `XENOED_COMMANDS` keybindings are `XenoedKey { XenoedKeyModifier mod; char key; }`
+  with four spellings in `config.h`: `XENOED_KEY_LEADER(k)` (SPACE then k),
+  `XENOED_KEY_CTRL(k)` (Ctrl+k), `XENOED_KEY_PLAIN(k)`, and `XENOED_KEY_NONE`
+  (`:` picker only). Ctrl+letter arrives at editor.c as its ASCII control byte
+  (`Ctrl+A`=`0x01`..`0x1A`) — `main.c` synthesizes it from the keysym in the
+  `KeyPress` handler, editor.c converts it back in `ctrl_character_to_letter()`.
+  Plain bindings are checked *before* `handle_normal`/`handle_visual`'s built-in
+  switch (so they can shadow builtins; `editor_init` warns about that and about
+  duplicates); leader-pending consumes the next key before plain dispatch.
 - `:s/pattern/repl/[g]` is an in-process POSIX regex substitution (no grep/sed
   subprocess). Implemented in `editor.c` as `sub_parse()` + `sub_line()` +
   `sub_whole_buffer()` / `sub_selection()`. Whole-buffer in normal mode;

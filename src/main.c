@@ -1071,8 +1071,26 @@ int main(int argc, char **argv) {
                 EditorSpecialKey special = classify_keysym(keysym, ev.xkey.state);
                 if (special != EKEY_NONE) {
                     editor_handle_key(&ed, special, NULL, 0);
-                } else if (len > 0) {
-                    editor_handle_key(&ed, EKEY_NONE, text, len);
+                } else {
+                    /* Ctrl+letter reaches the editor as its ASCII control
+                     * character (Ctrl+A = 0x01 ... Ctrl+Z = 0x1A), so
+                     * editor.c can dispatch XENOED_COMMANDS' <c>X bindings
+                     * in a toolkit-agnostic way -- the same representation
+                     * the existing Ctrl+X/C/V shortcuts rely on, but
+                     * synthesized straight from the keysym so it works
+                     * even when the input method produces no text bytes
+                     * for the combination. Ctrl+R was already consumed
+                     * above as EKEY_REDO. */
+                    unsigned char ctrl_byte = 0;
+                    if ((ev.xkey.state & ControlMask) &&
+                        ((keysym >= XK_a && keysym <= XK_z) ||
+                         (keysym >= XK_A && keysym <= XK_Z)))
+                        ctrl_byte = (unsigned char)(keysym & 0x1F);
+                    if (ctrl_byte) {
+                        editor_handle_key(&ed, EKEY_NONE, (const char *)&ctrl_byte, 1);
+                    } else if (len > 0) {
+                        editor_handle_key(&ed, EKEY_NONE, text, len);
+                    }
                 }
 
                 if (ed.want_quit) { running = 0; break; }

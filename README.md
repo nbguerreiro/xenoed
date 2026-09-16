@@ -248,19 +248,35 @@ above: data the compiler checks, not a runtime config file with its own
 parser. Each entry:
 
 ```c
-{ "indent", "indent.sh", 'i', CMD_INPUT_BUFFER },
+{ "indent", "indent.sh", XENOED_KEY_LEADER('i'), CMD_INPUT_BUFFER },
 ```
 
 is a name (shown in the `:` picker; `NULL` to leave it out), a script
 (passed to `execvp` -- a bare name searches `$PATH`, same as `grep`/`dmenu`
-are already invoked), a key (pressed after the leader key, `SPACE`, to run
-it directly; `0` for `:`-picker only), and an input kind:
+are already invoked), a keybinding, and an input kind. A keybinding is
+one of four spellings:
+
+| Spelling | Runs when |
+|---|---|
+| `XENOED_KEY_LEADER('i')` | you press `SPACE` then `i` |
+| `XENOED_KEY_CTRL('t')` | you press `Ctrl+t` (letter matched case-insensitively) |
+| `XENOED_KEY_PLAIN('e')` | you press plain `e` alone |
+| `XENOED_KEY_NONE` | only from the `:` picker |
+
+`SPACE` (the leader key, `XENOED_LEADER`) is a separate two-keystroke
+namespace that can't collide with xenoed's own single keys by
+construction. Ctrl bindings reach the editor as ASCII control characters
+`Ctrl+A`=`0x01` ... `Ctrl+Z`=`0x1A`, the same channel the built-in
+`Ctrl+X`/`Ctrl+C`/`Ctrl+V` insert-mode shortcuts already use. Plain
+bindings live in the same single-key namespace as xenoed's own commands,
+so they *can* shadow one (at your discretion -- xenoed warns about it on
+startup), which is why `Ctrl`/leader exist as deliberate alternatives.
 
 | Input kind | What happens |
 |---|---|
 | `CMD_INPUT_NONE` | No stdin. xenoed doesn't wait -- the script is fully detached and forgotten. For side effects: launchers, notifications, anything with nothing to hand back. |
 | `CMD_INPUT_BUFFER` | The whole buffer's current content (not necessarily what's on disk) goes to stdin. On exit 0, stdout replaces the entire buffer, as one undo step. A non-zero exit leaves the buffer untouched. |
-| `CMD_INPUT_SELECTION` | The current selection's text goes to stdin; on exit 0, stdout replaces just that selection. Only reachable via the leader key from **visual mode** -- normal mode never has an active selection, so triggering one via `:` always reports "needs a selection". This is what makes a leader-key command with this input kind read as an operator, the same way visual-mode `y`/`d`/`x` already do. |
+| `CMD_INPUT_SELECTION` | The current selection's text goes to stdin; on exit 0, stdout replaces just that selection. Only reachable from **visual mode** -- normal mode never has an active selection, so triggering one via `:` always reports "needs a selection". This is what makes a direct-keybinding (leader/Ctrl/plain) command with this input kind read as an operator, the same way visual-mode `y`/`d`/`x` already do. |
 
 The script's file path is always passed as `argv[1]` (an empty string if
 there isn't one), regardless of input kind -- there's no separate
@@ -274,20 +290,26 @@ currently on disk. A script meant for those two input kinds should ignore
 `$1` as a data source (use it only for context, e.g. picking a formatter
 by file extension) and read stdin unconditionally.
 
-Three example entries ship uncommented, using an obviously-nonexistent
-script name (`your-script-here`) rather than a real one: harmless by
-construction, since output only ever gets applied on a *confirmed* exit-0
-success, so a missing script just fails closed with a status message
-regardless of input kind -- it can never surprise you by touching the
-buffer. They're there so the dispatch mechanism itself (the leader key,
-the `:` picker, the "needs a selection" check) is something you can see
-working -- `SPACE` then `t`/`b`/`s`, or `:` then the name -- before you've
-written a single script of your own. Replace them, or add alongside.
+Four example entries ship uncommented, using an obviously-nonexistent
+script name (`your-script-here`) or a deliberately-harmless one rather
+than anything real: harmless by construction, since output only ever gets
+applied on a *confirmed* exit-0 success, so a missing script just fails
+closed with a status message regardless of input kind -- it can never
+surprise you by touching the buffer. They're there so the dispatch
+mechanism itself (the leader key, the Ctrl key, the plain key, the `:`
+picker, the "needs a selection" check) is something you can see working
+-- `SPACE` then `i`, `Ctrl+t`, plain `e`, or `:` then the name -- before
+you've written a single script of your own. Replace them, or add
+alongside. If one of your plain bindings collides with one of xenoed's
+own keys (say `j` or `:`), xenoed prints a one-line startup warning --
+that's the head's-up that the binding will shadow the built-in, which is
+exactly what a plain binding does by design.
 
-**A duplicate key across your own entries** (two commands both bound to
-the same letter) is reported as a warning on startup, not silently
-resolved one way or the other -- check xenoed's stderr if a keybinding
-doesn't seem to do what you expected.
+**Duplicate keybindings across your own entries** (two commands bound to
+the same modifier+key, e.g. two `XENOED_KEY_CTRL` entries on the same
+letter) are reported as a warning on startup, not silently resolved one
+way or the other -- check xenoed's stderr if a keybinding doesn't seem to
+do what you expected.
 
 **Fire-and-forget (`CMD_INPUT_NONE`) processes are double-forked** so the
 detached process is reparented to init and reaped automatically when it
@@ -381,12 +403,13 @@ correctly, not just Latin-1.
   replacing the whole buffer from external text (an external command's
   stdout). No X11/Pango dependency; unit-testable on its own.
 - `src/editor.{h,c}` — modal state machine (Normal/Insert/Visual/Search)
-  and all editing commands, including dispatching the leader key and `:`
-  picker to `config.h`'s external-command table. Still has no OS/X11
-  dependency -- it takes an abstract `EditorSpecialKey` enum plus raw
-  UTF-8 text, and reads `config.h` as compile-time data, not by calling
-  out to anything -- so it doesn't know or care that X11 (or a subprocess,
-  or dmenu) exists.
+  and all editing commands, including dispatching leader/Ctrl/plain
+  keybindings and the `:` picker to `config.h`'s external-command table.
+  Still has no OS/X11 dependency -- it takes an abstract
+  `EditorSpecialKey` enum plus raw UTF-8 text (Ctrl+letters arrive as
+  their ASCII control bytes `0x01`..`0x1A`), and reads `config.h` as
+  compile-time data, not by calling out to anything -- so it doesn't know
+  or care that X11 (or a subprocess, or dmenu) exists.
 - `src/render.{h,c}` — Cairo + Pango drawing of the buffer, cursor, and
   status/command bar onto any Cairo surface.
 - `src/main.c` — the only file that touches Xlib or spawns subprocesses:

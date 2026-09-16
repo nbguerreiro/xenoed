@@ -21,15 +21,51 @@ void editor_init(Editor *ed, Buffer *buf) {
     ed->buf = buf;
     ed->mode = MODE_NORMAL;
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
-        if (XENOED_COMMANDS[i].key == 0) continue;
+        if (XENOED_COMMANDS[i].key.mod == XENOED_MOD_NONE) continue;
         for (int j = i + 1; XENOED_COMMANDS[j].script != NULL; j++) {
-            if (XENOED_COMMANDS[j].key == XENOED_COMMANDS[i].key) {
+            if (XENOED_COMMANDS[j].key.mod == XENOED_MOD_NONE) continue;
+            if (XENOED_COMMANDS[j].key.mod == XENOED_COMMANDS[i].key.mod &&
+                XENOED_COMMANDS[j].key.key == XENOED_COMMANDS[i].key.key) {
+                const char *modname[] = { "(picker only)", "leader", "Ctrl", "plain" };
                 fprintf(stderr,
-                        "xenoed: warning: commands \"%s\" and \"%s\" in config.h both bind key '%c'\n",
+                        "xenoed: warning: commands \"%s\" and \"%s\" in config.h "
+                        "both bind %s '%c'\n",
                         XENOED_COMMANDS[i].name ? XENOED_COMMANDS[i].name : "(unnamed)",
                         XENOED_COMMANDS[j].name ? XENOED_COMMANDS[j].name : "(unnamed)",
-                        XENOED_COMMANDS[i].key);
+                        modname[XENOED_COMMANDS[i].key.mod],
+                        XENOED_COMMANDS[i].key.key);
             }
+        }
+    }
+
+    /* Plain bindings share the same single-key namespace as xenoed's own
+     * normal/visual-mode commands, so a binding that shadows a built-in is
+     * a footgun the author of a config deserves to be told about. Ctrl
+     * bindings are delivered as ASCII control characters, which insert
+     * mode already interprets for Ctrl+X/C/V; a table entry copying one of
+     * those never fires from insert mode. ' ' is the leader key: binding it
+     * plain would swallow the leader namespace entirely, so that's listed
+     * as a built-in too. */
+    const char normal_builtins[] = "hjl k0$GgiaAIoOxdypPuvV  :!/nN";
+    const char visual_builtins[] = "hjl k0$ydxpvV:!";
+    const char insert_ctrl[] = "xcv";
+    for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+        const XenoedKey *k = &XENOED_COMMANDS[i].key;
+        const char *where = NULL;
+        if (k->mod == XENOED_MOD_PLAIN) {
+            if (strchr(normal_builtins, k->key) || strchr(visual_builtins, k->key))
+                where = "built-in command";
+        } else if (k->mod == XENOED_MOD_CTRL) {
+            if (k->key == 'r' || strchr(insert_ctrl, k->key))
+                where = "existing Ctrl+ shortcut";
+        }
+        if (where) {
+            fprintf(stderr,
+                    "xenoed: warning: command \"%s\" binds a %s using key '%c', "
+                    "which shadows a %s\n",
+                    XENOED_COMMANDS[i].name ? XENOED_COMMANDS[i].name : "(unnamed)",
+                    k->mod == XENOED_MOD_PLAIN ? "plain" : "Ctrl",
+                    k->key, where);
         }
     }
 }
@@ -950,13 +986,28 @@ const char *const *editor_command_names(int *out_count) {
     return names;
 }
 
-static void editor_dispatch_leader_key(Editor *ed, char key) {
+/* Match an XENOED_COMMANDS entry whose keybinding is modifier `mod` +
+ * key `key`, and request it. Returns 1 if matched (the key is consumed),
+ * 0 if no command claims it. `key` for ctrl bindings arrives as the plain
+ * lowercase letter -- callers convert the ASCII control byte first. */
+static int editor_dispatch_command(Editor *ed, XenoedKeyModifier mod, char key) {
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
-        if (XENOED_COMMANDS[i].key != 0 && XENOED_COMMANDS[i].key == key) {
+        if (XENOED_COMMANDS[i].key.mod == mod && XENOED_COMMANDS[i].key.key == key) {
             editor_request_user_command(ed, i);
-            return;
+            return 1;
         }
     }
+    return 0;
+}
+
+/* Ctrl+letter reaches the editor as its ASCII control character (Ctrl+A
+ * is 0x01, Ctrl+T is 0x14, ...), the same representation main.c's X11
+ * layer already uses for Ctrl+X/C/V in insert mode. Return the lowercase
+ * letter for a dispatch lookup, or 0 if `text` isn't such a keypress. */
+static char ctrl_character_to_letter(const char *text, int len) {
+    if (len == 1 && (unsigned char)text[0] >= 1 && (unsigned char)text[0] <= 26)
+        return (char)('a' + (unsigned char)text[0] - 1);
+    return 0;
 }
 
 static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text, int len) {
@@ -979,7 +1030,14 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
 
     if (ed->leader_pending) {
         ed->leader_pending = 0;
-        editor_dispatch_leader_key(ed, c);
+        editor_dispatch_command(ed, XENOED_MOD_LEADER, c);
+        return;
+    }
+
+    char ctrl_letter = ctrl_character_to_letter(text, len);
+    if (ctrl_letter) {
+        ed->pending_op = 0;
+        editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_letter);
         return;
     }
 
@@ -1006,6 +1064,11 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
         }
         return;
     }
+
+    /* Plain-letter external-command bindings are checked before the
+     * built-in switch, so they can shadow xenoed's own keys at the
+     * config author's discretion (warned about at startup). */
+    if (editor_dispatch_command(ed, XENOED_MOD_PLAIN, c)) return;
 
     Buffer *b = ed->buf;
     Line *l = buffer_line(b, ed->cur_line);
@@ -1124,9 +1187,17 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
 
     if (ed->leader_pending) {
         ed->leader_pending = 0;
-        editor_dispatch_leader_key(ed, c);
+        editor_dispatch_command(ed, XENOED_MOD_LEADER, c);
         return;
     }
+
+    char ctrl_letter = ctrl_character_to_letter(text, len);
+    if (ctrl_letter) {
+        editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_letter);
+        return;
+    }
+
+    if (editor_dispatch_command(ed, XENOED_MOD_PLAIN, c)) return;
 
     switch (c) {
         case 'h': move_left(ed); break;
