@@ -970,6 +970,17 @@ int main(int argc, char **argv) {
     Window win = XCreateSimpleWindow(dpy, root, 0, 0, (unsigned)width, (unsigned)height, 0,
                                       BlackPixel(dpy, screen), BlackPixel(dpy, screen));
 
+    /* External commands (config.h's XENOED_COMMANDS) and the '!' filter
+     * inherit this, so a script can find the editor's own X window the
+     * same way most X tooling does -- e.g. to embed a dmenu with
+     * `dmenu -w "$WINDOWID"` in the editor window. Set once; every fork/
+     * exec below inherits it. */
+    {
+        char win_str[32];
+        snprintf(win_str, sizeof(win_str), "%lu", (unsigned long)win);
+        setenv("WINDOWID", win_str, 1);
+    }
+
     XStoreName(dpy, win, path ? path : "xenoed");
 
     XClassHint *class_hint = XAllocClassHint();

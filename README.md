@@ -56,6 +56,8 @@ make EXTRA_CFLAGS='-DXENOED_FONT="Inter Variable @wght=650,opsz=18"'   # variabl
 | `I` / `A` | insert at start / end of line |
 | `o` / `O` | open new line below / above, enter insert |
 | `x` | delete character under cursor |
+| `r` followed by a character | replace the character under the cursor with that character |
+| `D` | delete from the cursor to the end of the line (also yanks) |
 | `dd` | delete current line |
 | `yy` | yank (copy) current line to CLIPBOARD |
 | `p` | paste CLIPBOARD after the current line (or inline, if what's on the clipboard isn't a whole line) |
@@ -294,6 +296,13 @@ input kinds should ignore `$1` as a data source (use it only for
 context, e.g. picking a formatter by file extension) and read stdin
 unconditionally.
 
+The editor's X window id is always available too, as the `$WINDOWID`
+environment variable -- the convention most X tooling already uses (e.g.
+`dmenu -w "$WINDOWID"`). It's inherited by every external command (and
+the `!` filter), single-word and one-liner alike, so a script can
+identify or raise or embed things in the very xenoed window that spawned
+it without needing the window id passed as an argument.
+
 Five example entries ship uncommented, covering the four input kinds:
 `indent` (CMD_INPUT_BUFFER, leader key), `lowercase` and `uppercase`
 (CMD_INPUT_SELECTION, `:` picker only), `format_table`
@@ -444,8 +453,8 @@ make -C . 2>/dev/null; cc -std=c11 -D_POSIX_C_SOURCE=200809L \
 
 - No line wrapping (long lines just run off the right edge).
 - No horizontal scrolling.
-- `dd` is the only multi-key normal-mode command; no `dw`, counts, or
-  registers (there's only ever one yank register, not vim's `"a`-`"z`).
+- `dd` and `r` are the only multi-key normal-mode commands; no `dw`, counts,
+  or registers (there's only ever one yank register, not vim's `"a`-`"z`).
 - Visual mode is intentionally minimal: no case-changing or block-visual
   variants, and `v`/`V` don't extend to `d`/`y` composing with motions the
   way vim's operator-pending mode does (e.g. no `dw`) -- just enough for

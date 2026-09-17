@@ -1885,6 +1885,82 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 90: 'r'X replaces the character under the cursor with X (one
+     * undo step), leaving the cursor on the replacement */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "rJ"); /* replace 'h' with 'J' */
+        printf("Test 90 ('r' replaces char under cursor):\n"); dump(b);
+        CHECK(strcmp(buffer_line(b, 0)->data, "Jello") == 0);
+        CHECK(ed.mode == MODE_NORMAL);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 0);
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0); /* one undo step */
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 91: 'r' works across multi-byte UTF-8 -- both the replaced
+     * character and the replacement can be multi-byte; and it refuses to
+     * replace when there's nothing under the cursor */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "i{caf\xc3\xa9}<Esc>"); /* caf + e-acute (2 bytes) */
+        ed.cur_line = 0; ed.cur_col = 3;  /* on the e-acute start byte */
+        feed(&ed, "r{\xc3\xa0}");          /* replace the 2-byte with a 2-byte (a-grave) */
+        printf("Test 91a (multi-byte 'r'):\n"); dump(b);
+        CHECK(strcmp(buffer_line(b, 0)->data, "caf\xc3\xa0") == 0);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 3); /* still on the replacement's start */
+
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "caf\xc3\xa9") == 0);
+
+        /* 'r' on an empty line must report an error, unchanged buffer */
+        Buffer *b2 = buffer_new();
+        buffer_load(b2, NULL);
+        Editor ed2; editor_init(&ed2, b2);
+        feed(&ed2, "ra");
+        printf("Test 91b (empty-line 'r' error): status=\"%s\"\n", ed2.status);
+        CHECK(strstr(ed2.status, "nothing to replace") != NULL);
+        CHECK(strcmp(buffer_line(b2, 0)->data, "") == 0);
+        editor_deinit(&ed2);
+        buffer_free(b2);
+
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 92: 'D' cuts (yanks + deletes) from the cursor to the end of
+     * the line, one undo step; a cursor at the very end is a no-op */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello world<Esc>");
+        ed.cur_line = 0; ed.cur_col = 6; /* on the 'w' */
+        feed(&ed, "D");
+        printf("Test 92a ('D' cuts to end of line):\n"); dump(b);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello ") == 0);
+        CHECK(ed.yank_text != NULL && ed.yank_len == 5 && memcmp(ed.yank_text, "world", 5) == 0);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 5); /* clamped to the (now last) space char */
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello world") == 0);
+        CHECK(ed.yank_len == 5 && memcmp(ed.yank_text, "world", 5) == 0); /* undo doesn't clear the yank */
+
+        ed.cur_line = 0; ed.cur_col = 11; /* end of line: nothing to delete */
+        feed(&ed, "D");
+        printf("Test 92b ('D' at end of line is a no-op)\n");
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello world") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

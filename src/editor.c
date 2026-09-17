@@ -47,7 +47,7 @@ void editor_init(Editor *ed, Buffer *buf) {
      * those never fires from insert mode. ' ' is the leader key: binding it
      * plain would swallow the leader namespace entirely, so that's listed
      * as a built-in too. */
-    const char normal_builtins[] = "hjl k0$GgiaAIoOxdypPuvV  :!/nN'm";
+    const char normal_builtins[] = "hjl k0$GgiaAIoOrDxdypPuvV  :!/nN'm";
     const char visual_builtins[] = "hjl k0$ydxpvV:!";
     const char insert_ctrl[] = "xcv";
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
@@ -1152,6 +1152,29 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
                 set_status(ed, "E: mark '%c' not set", c);
             }
             return;
+        } else if (op == 'r') {
+            /* 'r'+char: replace the character under the cursor with the
+             * just-typed text (which may be a multi-byte UTF-8 character),
+             * one undo step, cursor staying on the replacement's first
+             * byte. Refuses an empty line or a cursor resting past the
+             * last character. */
+            Line *rl = buffer_line(ed->buf, ed->cur_line);
+            if (ed->cur_col >= rl->len) {
+                set_status(ed, "E: nothing to replace");
+                return;
+            }
+            size_t rnext = utf8_next_boundary(rl->data, rl->len, ed->cur_col);
+            if (rnext <= ed->cur_col) {
+                set_status(ed, "E: nothing to replace");
+                return;
+            }
+            editor_checkpoint(ed);
+            line_delete_bytes(rl, ed->cur_col, rnext - ed->cur_col);
+            if (len > 0) line_insert_bytes(rl, ed->cur_col, text, (size_t)len);
+            ed->buf->dirty = 1;
+            editor_clamp_cursor(ed);
+            set_status(ed, "replaced");
+            return;
         } else if (c == op) {
             if (op == 'd') {
                 editor_yank_line(ed);
@@ -1241,6 +1264,21 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             break;
         case 'd': ed->pending_op = 'd'; break;
         case 'y': ed->pending_op = 'y'; break;
+        case 'r': ed->pending_op = 'r'; break;
+        case 'D':
+            if (l->len > ed->cur_col) {
+                size_t dlen = l->len - ed->cur_col;
+                char *copy = malloc(dlen);
+                if(copy == NULL){ _exit(-1); };
+                memcpy(copy, l->data + ed->cur_col, dlen);
+                editor_set_yank(ed, copy, dlen);
+                editor_checkpoint(ed);
+                line_delete_bytes(l, ed->cur_col, dlen);
+                b->dirty = 1;
+                editor_clamp_cursor(ed);
+                set_status(ed, "%zu bytes cut", dlen);
+            }
+            break;
         case 'm': ed->pending_op = 'm'; break;
         case '\'': ed->pending_op = '\''; break;
         case 'p': paste_before_requested = 0; ed->paste_requested = 1; break;

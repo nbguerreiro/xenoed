@@ -173,10 +173,7 @@ static const XenoedCommand XENOED_COMMANDS[] = {
     { "upper_word",     "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
     { "lowercase_word", "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
     { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
-
-    { "tag_goto",   "/home/fx/src/x/xenoed/script.sh", XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
-
-    /*{ "example_picker", "your-script-here",           XENOED_KEY_NONE,        CMD_INPUT_BUFFER },*/
+    { "tag_goto",       "tag_goto.sh",             XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
 
     { NULL, NULL, XENOED_KEY_NONE, CMD_INPUT_NONE } /* sentinel -- must stay last */
 };

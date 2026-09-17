@@ -63,6 +63,11 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   same way it uses `editor_get_selection_text`/`editor_paste_text`.
   `editor_request_user_command()` refuses WORD commands from visual mode and
   from lines with no word, mirroring SELECTION's "needs a selection" guard.
+- Every external command (and the `!` filter) inherits the editor's X window
+  id as `$WINDOWID` — `main.c` `setenv`s it once after `XCreateSimpleWindow`,
+  before the event loop, so all `fork`/`exec` children get it regardless of
+  argv spelling (todo #23). Single-word scripts still get only the filename
+  as argv[1]; the window id is deliberately env-only, not an extra argv slot.
 - `XENOED_COMMANDS` keybindings are `XenoedKey { XenoedKeyModifier mod; char key; }`
   with four spellings in `config.h`: `XENOED_KEY_LEADER(k)` (SPACE then k),
   `XENOED_KEY_CTRL(k)` (Ctrl+k), `XENOED_KEY_PLAIN(k)`, and `XENOED_KEY_NONE`

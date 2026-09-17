@@ -54,8 +54,9 @@ typedef struct {
 
     size_t top_line;   /* first visible line, for vertical scrolling */
 
-    char pending_op;   /* 0, or 'd'/'y'/'m'/'\'' after a lone 'd'/'y'/'m'/'\'' in
-                        * normal mode, awaiting the repeat or the mark letter */
+    char pending_op;   /* 0, or 'd'/'y'/'m'/'\''/'r' after a lone
+                        * 'd'/'y'/'m'/'\''/'r' in normal mode, awaiting the
+                        * repeat, the mark letter, or the replacement char */
     int leader_pending; /* true right after XENOED_LEADER, awaiting the command key */
 
     char cmdline[256]; /* text typed after '/' (search mode) */
