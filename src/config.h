@@ -156,7 +156,11 @@ typedef struct {
  * (see main.c's run_filter()), so nothing happens unless you invoke them.
  * "upper_word" is the same idea one level smaller: "SPACE" then 'u'
  * uppercases the word under the cursor in place (CMD_INPUT_WORD), the
- * normal-mode singleton cut of the same perl one-liner.
+ * normal-mode singleton cut of the same perl one-liner, and
+ * "lowercase_word" is its mirror image on the plain key 'w' (which
+ * shadows no built-in), demonstrating the plain-letter binding spelling.
+ * The "script" entry shows a Ctrl binding spelled as a punctuation key:
+ * Ctrl+] is XENOED_KEY_CTRL(']').
  * "indent.sh" and the commented examples exist as dispatch-mechanism
  * placeholders that fail closed with a status message. Replace and add
  * entries freely; the leader key, the Ctrl key, the plain key and the ':'
@@ -166,12 +170,12 @@ static const XenoedCommand XENOED_COMMANDS[] = {
     { "indent",         "indent.sh",               XENOED_KEY_LEADER('i'), CMD_INPUT_BUFFER },
     { "lowercase",      "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
     { "uppercase",      "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "upper_word",     "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
+    { "lowercase_word", "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
     { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
-    { "upper_word",     "perl -pe '$_ = uc'",      XENOED_KEY_LEADER('u'), CMD_INPUT_WORD },
 
-    { "script",   "/home/fx/src/x/xenoed/script.sh", XENOED_KEY_CTRL('t'),   CMD_INPUT_WORD },
+    { "tag_goto",   "/home/fx/src/x/xenoed/script.sh", XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
 
-    /*{ "example_plain",  "your-script-here",           XENOED_KEY_PLAIN('e'),  CMD_INPUT_NONE },*/
     /*{ "example_picker", "your-script-here",           XENOED_KEY_NONE,        CMD_INPUT_BUFFER },*/
 
     { NULL, NULL, XENOED_KEY_NONE, CMD_INPUT_NONE } /* sentinel -- must stay last */

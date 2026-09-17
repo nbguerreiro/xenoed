@@ -30,6 +30,8 @@
 - [x] 18. send word under cursor to external command
 - [x] 19. block cursor should be a hollow rectangle when window is not in focus
 - [x] 20. marks
+- [x] 22. XENOED_KEY_CTRL(']') should work
+- [ ] 21. external commands should have the option to also work in insert mode
 
 
 

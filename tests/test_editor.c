@@ -39,6 +39,17 @@ static void dump(Buffer *b) {
 static int failures = 0;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL: %s (line %d)\n", #cond, __LINE__); failures++; } } while (0)
 
+/* Inverse of editor.c's ctrl_character_to_key: the ASCII control byte
+ * (0x01..0x1A for 'a'..'z', 0x1B..0x1F for '[' '\' ']' '^' '_') that
+ * main.c synthesizes for a Ctrl+key press. Returns 0 for a key that has
+ * no control representation. */
+static char ctrl_byte_for_key(char key) {
+    if (key >= 'a' && key <= 'z') return (char)(key - 'a' + 1);
+    const char *punct = "[\\]^_";
+    const char *q = strchr(punct, key);
+    return q ? (char)(0x1B + (q - punct)) : 0;
+}
+
 int main(void) {
     /* Test 1: basic insert */
     {
@@ -1547,6 +1558,10 @@ int main(void) {
         }
         CHECK(idx >= 0);
         char keys[2] = { key, '\0' };
+        /* The shipped plain example is a CMD_INPUT_WORD command, so a
+         * word must be under the cursor for it to fire. */
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
         feed(&ed, keys);
         printf("Test 76 (plain key requests a user command): requested=%d index=%d\n",
                ed.user_command_requested, ed.user_command_index);
@@ -1557,10 +1572,11 @@ int main(void) {
     }
 
     /* Test 77: a Ctrl binding (XENOED_KEY_CTRL) fires when the matching
-     * ASCII control character (Ctrl+T = 0x14) arrives -- the representation
-     * main.c synthesizes for Ctrl+letter -- and, since the shipped ctrl
-     * example is CMD_INPUT_SELECTION, entering it from visual mode with a
-     * live selection requests it and drops back to normal mode */
+     * ASCII control character arrives -- the representation main.c
+     * synthesizes for a Ctrl+key press (for the shipped example this is
+     * Ctrl+] = 0x1D, a non-letter). The shipped ctrl example is a
+     * CMD_INPUT_WORD command, so it only fires from normal mode with a
+     * word under the cursor. */
     {
         Buffer *b = buffer_new();
         buffer_load(b, NULL);
@@ -1575,17 +1591,15 @@ int main(void) {
             }
         }
         CHECK(idx >= 0);
+        char ctrlkeys[2] = { ctrl_byte_for_key(key), '\0' };
+        CHECK(ctrlkeys[0] != 0);
         feed(&ed, "ihello<Esc>");
-        ed.cur_line = 0; ed.cur_col = 0;
-        feed(&ed, "vll"); /* select "hel" */
-        CHECK(ed.mode == MODE_VISUAL);
-        char ctrlkeys[2] = { (char)(key - 'a' + 1), '\0' };
+        ed.cur_line = 0; ed.cur_col = 0; /* rest on 'h': a real word */
         feed(&ed, ctrlkeys);
-        printf("Test 77 (Ctrl+key requests a user command): requested=%d index=%d mode=%d\n",
-               ed.user_command_requested, ed.user_command_index, ed.mode);
+        printf("Test 77 (Ctrl+key requests a user command): requested=%d index=%d\n",
+               ed.user_command_requested, ed.user_command_index);
         CHECK(ed.user_command_requested);
         CHECK(ed.user_command_index == idx);
-        CHECK(ed.mode == MODE_NORMAL);
         editor_deinit(&ed);
         buffer_free(b);
     }

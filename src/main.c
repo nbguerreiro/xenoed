@@ -1124,19 +1124,24 @@ int main(int argc, char **argv) {
                 if (special != EKEY_NONE) {
                     editor_handle_key(&ed, special, NULL, 0);
                 } else {
-                    /* Ctrl+letter reaches the editor as its ASCII control
-                     * character (Ctrl+A = 0x01 ... Ctrl+Z = 0x1A), so
-                     * editor.c can dispatch XENOED_COMMANDS' <c>X bindings
-                     * in a toolkit-agnostic way -- the same representation
-                     * the existing Ctrl+X/C/V shortcuts rely on, but
-                     * synthesized straight from the keysym so it works
-                     * even when the input method produces no text bytes
-                     * for the combination. Ctrl+R was already consumed
+                    /* Ctrl+key reaches the editor as its ASCII control
+                     * character (Ctrl+A = 0x01 ... Ctrl+Z = 0x1A,
+                     * Ctrl+[ = 0x1B, Ctrl+\ = 0x1C, Ctrl+] = 0x1D, Ctrl+^
+                     * = 0x1E, Ctrl+_ = 0x1F), so editor.c can dispatch
+                     * XENOED_COMMANDS' <c>X bindings in a toolkit-agnostic
+                     * way -- the same representation the existing Ctrl+X/C/V
+                     * shortcuts rely on, but synthesized straight from the
+                     * keysym so it works even when the input method produces
+                     * no text bytes for the combination (as it typically
+                     * does for Ctrl+]). The bracket keysyms fall in the
+                     * ASCII 0x5B..0x5F range, so the same 0x1F mask yields
+                     * the right control byte. Ctrl+R was already consumed
                      * above as EKEY_REDO. */
                     unsigned char ctrl_byte = 0;
                     if ((ev.xkey.state & ControlMask) &&
                         ((keysym >= XK_a && keysym <= XK_z) ||
-                         (keysym >= XK_A && keysym <= XK_Z)))
+                         (keysym >= XK_A && keysym <= XK_Z) ||
+                         (keysym >= XK_bracketleft && keysym <= XK_underscore)))
                         ctrl_byte = (unsigned char)(keysym & 0x1F);
                     if (ctrl_byte) {
                         editor_handle_key(&ed, EKEY_NONE, (const char *)&ctrl_byte, 1);

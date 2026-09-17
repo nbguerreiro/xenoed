@@ -1089,13 +1089,19 @@ static int editor_dispatch_command(Editor *ed, XenoedKeyModifier mod, char key) 
     return 0;
 }
 
-/* Ctrl+letter reaches the editor as its ASCII control character (Ctrl+A
- * is 0x01, Ctrl+T is 0x14, ...), the same representation main.c's X11
- * layer already uses for Ctrl+X/C/V in insert mode. Return the lowercase
- * letter for a dispatch lookup, or 0 if `text` isn't such a keypress. */
-static char ctrl_character_to_letter(const char *text, int len) {
-    if (len == 1 && (unsigned char)text[0] >= 1 && (unsigned char)text[0] <= 26)
-        return (char)('a' + (unsigned char)text[0] - 1);
+/* Ctrl+key reaches the editor as its ASCII control character (Ctrl+A is
+ * 0x01, Ctrl+T is 0x14, Ctrl+] is 0x1D, ...), the same representation
+ * main.c's X11 layer already uses for Ctrl+X/C/V in insert mode. Return
+ * the key the control byte stands for -- the lowercase letter for
+ * 0x01..0x1A, a punctuation character for 0x1B..0x1F ('[', '\', ']', '^',
+ * '_'; 0x1B is Ctrl+[) -- for a dispatch lookup, or 0 if `text` isn't
+ * such a keypress. */
+static char ctrl_character_to_key(const char *text, int len) {
+    if (len == 1) {
+        unsigned char c0 = (unsigned char)text[0];
+        if (c0 >= 1 && c0 <= 26) return (char)('a' + c0 - 1);
+        if (c0 >= 0x1B && c0 <= 0x1F) return "[\\]^_"[c0 - 0x1B];
+    }
     return 0;
 }
 
@@ -1123,10 +1129,10 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
         return;
     }
 
-    char ctrl_letter = ctrl_character_to_letter(text, len);
-    if (ctrl_letter) {
+    char ctrl_key = ctrl_character_to_key(text, len);
+    if (ctrl_key) {
         ed->pending_op = 0;
-        editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_letter);
+        editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_key);
         return;
     }
 
@@ -1295,9 +1301,9 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
         return;
     }
 
-    char ctrl_letter = ctrl_character_to_letter(text, len);
-    if (ctrl_letter) {
-        editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_letter);
+    char ctrl_key = ctrl_character_to_key(text, len);
+    if (ctrl_key) {
+        editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_key);
         return;
     }
 
