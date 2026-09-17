@@ -277,30 +277,34 @@ startup), which is why `Ctrl`/leader exist as deliberate alternatives.
 | `CMD_INPUT_NONE` | No stdin. xenoed doesn't wait -- the script is fully detached and forgotten. For side effects: launchers, notifications, anything with nothing to hand back. |
 | `CMD_INPUT_BUFFER` | The whole buffer's current content (not necessarily what's on disk) goes to stdin. On exit 0, stdout replaces the entire buffer, as one undo step. A non-zero exit leaves the buffer untouched. |
 | `CMD_INPUT_SELECTION` | The current selection's text goes to stdin; on exit 0, stdout replaces just that selection. Only reachable from **visual mode** -- normal mode never has an active selection, so triggering one via `:` always reports "needs a selection". This is what makes a direct-keybinding (leader/Ctrl/plain) command with this input kind read as an operator, the same way visual-mode `y`/`d`/`x` already do. |
+| `CMD_INPUT_WORD` | The word under the cursor -- a maximal run of non-whitespace bytes on the current line, spanning into the nearest word when the cursor rests on whitespace -- goes to stdin; on exit 0, stdout replaces just that word, one undo step. **Normal mode only** -- visual mode is refused ("is a normal-mode command") because the cursor there extends a selection, not a word. |
 
 The script's file path is always passed as `argv[1]` (an empty string if
 there isn't one), regardless of input kind -- there's no separate
 placeholder for it, unlike the input kind above. One thing worth knowing
-if you write a `CMD_INPUT_BUFFER`/`CMD_INPUT_SELECTION` script that also
-wants this: most standard Unix filters (`cat`, `sort`, `tr`, `sed`
-without `-i`, etc.) treat a trailing filename argument as "read from this
-file instead of stdin" -- the opposite of what you want, since the whole
-point is that stdin carries the buffer/selection content, not whatever's
-currently on disk. A script meant for those two input kinds should ignore
-`$1` as a data source (use it only for context, e.g. picking a formatter
-by file extension) and read stdin unconditionally.
+if you write a `CMD_INPUT_BUFFER`/`CMD_INPUT_SELECTION`/`CMD_INPUT_WORD`
+script that also wants this: most standard Unix filters (`cat`, `sort`,
+`tr`, `sed` without `-i`, etc.) treat a trailing filename argument as
+"read from this file instead of stdin" -- the opposite of what you want,
+since the whole point is that stdin carries the buffer/selection/word
+content, not whatever's currently on disk. A script meant for those
+input kinds should ignore `$1` as a data source (use it only for
+context, e.g. picking a formatter by file extension) and read stdin
+unconditionally.
 
-Four example entries ship uncommented, using an obviously-nonexistent
-script name (`your-script-here`) or a deliberately-harmless one rather
-than anything real: harmless by construction, since output only ever gets
-applied on a *confirmed* exit-0 success, so a missing script just fails
-closed with a status message regardless of input kind -- it can never
-surprise you by touching the buffer. They're there so the dispatch
-mechanism itself (the leader key, the Ctrl key, the plain key, the `:`
-picker, the "needs a selection" check) is something you can see working
--- `SPACE` then `i`, `Ctrl+t`, plain `e`, or `:` then the name -- before
-you've written a single script of your own. Replace them, or add
-alongside. If one of your plain bindings collides with one of xenoed's
+Five example entries ship uncommented, covering the four input kinds:
+`indent` (CMD_INPUT_BUFFER, leader key), `lowercase` and `uppercase`
+(CMD_INPUT_SELECTION, `:` picker only), `format_table`
+(CMD_INPUT_SELECTION, `:` picker only), and `upper_word`
+(CMD_INPUT_WORD, `SPACE then u`). The script names are deliberately
+nonexistent or functional one-liners: harmless by construction, since
+output only ever gets applied on a *confirmed* exit-0 success, so a
+missing script just fails closed with a status message regardless of
+input kind -- it can never surprise you by touching the buffer. They're
+there so the dispatch mechanism itself (the leader key, the Ctrl key,
+the plain key, the `:` picker, the "needs a selection" and "normal-mode
+command" checks) is something you can see working before you've written
+a single script of your own. Replace them, or add alongside. If one of your plain bindings collides with one of xenoed's
 own keys (say `j` or `:`), xenoed prints a one-line startup warning --
 that's the head's-up that the binding will shadow the built-in, which is
 exactly what a plain binding does by design.

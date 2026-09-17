@@ -1637,6 +1637,186 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 80: editor_get_word_text returns the maximal run of
+     * non-whitespace around the cursor -- the word under it */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello world<Esc>");
+        ed.cur_line = 0; ed.cur_col = 6; /* on the 'w' of "world" */
+        char *w = NULL; size_t wlen = 0;
+        CHECK(editor_get_word_text(&ed, &w, &wlen));
+        printf("Test 80 (word under cursor on 'w'): \"%.*s\"\n", (int)wlen, w ? w : "");
+        CHECK(wlen == 5 && memcmp(w, "world", 5) == 0);
+        free(w);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 81: cursor on whitespace spans to the nearest word -- left
+     * word when spaces separate it, right word when leading whitespace
+     * (or an empty left side) is all there is, trailing word at EOL */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "i  alpha beta <Esc>"); /* "  alpha beta " (len 13) */
+        char *w = NULL; size_t wlen = 0;
+
+        ed.cur_line = 0; ed.cur_col = 4; /* in "alpha" */
+        CHECK(editor_get_word_text(&ed, &w, &wlen));
+        CHECK(wlen == 5 && memcmp(w, "alpha", 5) == 0);
+        free(w); w = NULL;
+
+        ed.cur_col = 7; /* the space right after "alpha" */
+        CHECK(editor_get_word_text(&ed, &w, &wlen));
+        CHECK(wlen == 5 && memcmp(w, "alpha", 5) == 0); /* prefers left */
+        free(w); w = NULL;
+
+        ed.cur_col = 1; /* leading whitespace, nothing to the left */
+        CHECK(editor_get_word_text(&ed, &w, &wlen));
+        CHECK(wlen == 5 && memcmp(w, "alpha", 5) == 0); /* falls to the right */
+        free(w); w = NULL;
+
+        ed.cur_col = 13; /* trailing space after "beta" (== len) */
+        CHECK(editor_get_word_text(&ed, &w, &wlen));
+        CHECK(wlen == 4 && memcmp(w, "beta", 4) == 0); /* left word */
+        free(w); w = NULL;
+
+        printf("Test 81 (whitespace/edge word span): ok\n");
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 82: no word on an empty or all-whitespace line */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        char *w = NULL; size_t wlen = 0;
+        CHECK(!editor_get_word_text(&ed, &w, &wlen)); /* empty buffer line */
+        feed(&ed, "i   <Esc>");                       /* whitespace only */
+        CHECK(!editor_get_word_text(&ed, &w, &wlen));
+        CHECK(w == NULL); /* untouched on failure */
+        printf("Test 82 (no word on empty/blank line): ok\n");
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 83: editor_replace_word_text swaps the word in place, as one
+     * undo step, and an empty replacement deletes it */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello world<Esc>");
+        ed.cur_line = 0; ed.cur_col = 6; /* on 'w' of "world" */
+        CHECK(editor_replace_word_text(&ed, "there", 5));
+        printf("Test 83 (replace_word_text):\n"); dump(b);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello there") == 0);
+        CHECK(ed.cur_col == 6); /* cursor on the replacement's first char */
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello world") == 0);
+
+        ed.cur_col = 6;
+        CHECK(editor_replace_word_text(&ed, "", 0)); /* empty -> deletes */
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello ") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 84: replace_word_text with no word is a no-op */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        CHECK(!editor_replace_word_text(&ed, "x", 1));
+        printf("Test 84 (replace_word_text no-op without a word): ok\n");
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 85: 'SPACE' then the leader-bound CMD_INPUT_WORD key requests it
+     * from normal mode -- the direct-keybinding dispatch the feature is
+     * built around */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        char key = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_WORD &&
+                XENOED_COMMANDS[i].key.mod == XENOED_MOD_LEADER) {
+                idx = i;
+                key = XENOED_COMMANDS[i].key.key;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        char keys[3] = { ' ', key, '\0' };
+        feed(&ed, keys);
+        printf("Test 85 (leader+word-command key requests it): requested=%d index=%d\n",
+               ed.user_command_requested, ed.user_command_index);
+        CHECK(ed.user_command_requested);
+        CHECK(ed.user_command_index == idx);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 86: a CMD_INPUT_WORD command from visual mode (where the cursor
+     * extends a selection rather than a word) is refused, and from a blank
+     * line it reports "no word"; from normal mode with a word it requests. */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_WORD && XENOED_COMMANDS[i].name) {
+                idx = i;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        const char *name = XENOED_COMMANDS[idx].name;
+
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "vll"); /* visual mode with a live selection */
+        editor_run_command(&ed, name);
+        printf("Test 86a (word command refused in visual mode): status=\"%s\" requested=%d mode=%d\n",
+               ed.status, ed.user_command_requested, ed.mode);
+        CHECK(!ed.user_command_requested);
+        CHECK(ed.mode == MODE_VISUAL); /* selection kept, like the :s guard */
+        CHECK(strstr(ed.status, "normal-mode") != NULL);
+
+        Buffer *b2 = buffer_new();
+        buffer_load(b2, NULL);
+        Editor ed2; editor_init(&ed2, b2);
+        editor_run_command(&ed2, name); /* blank line, no word */
+        printf("Test 86b (word command refused on blank line): status=\"%s\" requested=%d\n",
+               ed2.status, ed2.user_command_requested);
+        CHECK(!ed2.user_command_requested);
+        CHECK(strstr(ed2.status, "no word") != NULL);
+
+        feed(&ed2, "iword<Esc>");
+        ed2.cur_line = 0; ed2.cur_col = 0;
+        editor_run_command(&ed2, name);
+        printf("Test 86c (word command from normal mode requests): requested=%d index=%d\n",
+               ed2.user_command_requested, ed2.user_command_index);
+        CHECK(ed2.user_command_requested);
+        CHECK(ed2.user_command_index == idx);
+        editor_deinit(&ed2);
+        buffer_free(b2);
+
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

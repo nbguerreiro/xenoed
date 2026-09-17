@@ -53,6 +53,16 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
 - New normal-mode keybindings belong in `editor.c` `handle_normal()`; remember
   repeat.c shadows the chars listed above. Add `:` commands to both
   `editor_run_command()` and `editor_command_names()` (by design, not generated).
+- `CMD_INPUT_WORD` (todo #18) is the third "input supplied by the editor"
+  command kind alongside `CMD_INPUT_BUFFER`/`CMD_INPUT_SELECTION`: the word
+  under the cursor -- a maximal run of non-whitespace bytes, whitespace
+  cursor falling back left-then-right -- is piped to the script's stdin and
+  stdout (on exit 0) replaces just that word. The word boundary helpers live
+  in `editor.c` (`word_bounds`, `editor_get_word_text`,
+  `editor_replace_word_text`); `main.c` `run_user_command()` uses them the
+  same way it uses `editor_get_selection_text`/`editor_paste_text`.
+  `editor_request_user_command()` refuses WORD commands from visual mode and
+  from lines with no word, mirroring SELECTION's "needs a selection" guard.
 - `XENOED_COMMANDS` keybindings are `XenoedKey { XenoedKeyModifier mod; char key; }`
   with four spellings in `config.h`: `XENOED_KEY_LEADER(k)` (SPACE then k),
   `XENOED_KEY_CTRL(k)` (Ctrl+k), `XENOED_KEY_PLAIN(k)`, and `XENOED_KEY_NONE`

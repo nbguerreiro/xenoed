@@ -190,6 +190,15 @@ void editor_selection_range(const Editor *ed, size_t *from_line, size_t *from_co
  * PRIMARY requests and could serve any other "give me the selection" need. */
 int editor_get_selection_text(const Editor *ed, char **out_text, size_t *out_len);
 
+/* Mallocs *out_text (caller frees) with the word under the cursor: the
+ * maximal run of non-whitespace bytes on the current line touching the
+ * cursor; a cursor on whitespace spans to the nearest word (left first,
+ * then right). No trailing newline -- the word is an inline span, unlike a
+ * linewise selection. Returns 0 if the line holds no word at all. This is
+ * what feeds CMD_INPUT_WORD external commands; see editor_replace_word_text
+ * for the "replace it with the script's stdout" half. */
+int editor_get_word_text(const Editor *ed, char **out_text, size_t *out_len);
+
 /* Inserts `text` (as fetched from CLIPBOARD, or from anywhere else) at the
  * cursor. If an active selection exists, it's replaced first, same as
  * typing does. Follows a vim-like linewise/characterwise heuristic: text
@@ -204,6 +213,15 @@ void editor_paste_text(Editor *ed, const char *text, size_t len);
  * produce no stdout (e.g. `true`, `grep` with no matches). Returns 0 if
  * there is no active selection. Leaves MODE_NORMAL on success. */
 int editor_replace_selection_text(Editor *ed, const char *text, size_t len);
+
+/* Replaces the word under the cursor (per editor_get_word_text) with
+ * `text` as one undo step -- the CMD_INPUT_WORD counterpart to
+ * editor_replace_selection_text: an external command's exit-0 stdout lands
+ * exactly where its stdin's word came from. An empty `text` deletes the
+ * word. Cursor moves to the replacement's first character. Returns 0 if
+ * there's no word under the cursor. Only meaningful from normal mode
+ * (editor_request_user_command already refuses visual-mode trigger). */
+int editor_replace_word_text(Editor *ed, const char *text, size_t len);
 
 /* Copy/cut for mouse- or menu-driven callers (the right-click context
  * menu), deliberately NOT sharing code with visual-mode 'y' despite doing

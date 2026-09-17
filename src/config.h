@@ -99,7 +99,20 @@ typedef enum {
      * is normal-mode only) will always just report "needs a selection".
      * This is what makes a leader-key command with this input kind read
      * as an operator, the same way visual-mode y/d/x already do. */
-    CMD_INPUT_SELECTION
+    CMD_INPUT_SELECTION,
+
+    /* The word under the cursor -- a maximal run of non-whitespace bytes
+     * on the current line; a cursor resting on whitespace spans to the
+     * nearest word (the one to the left, then the one to the right) --
+     * goes to the script's stdin, and (on exit 0) its stdout replaces
+     * just that word, one undo step, cursor landing on the replacement's
+     * first character. The normal-mode counterpart to CMD_INPUT_SELECTION:
+     * it needs no selection because the cursor itself supplies the span,
+     * so it's the natural way to bind an operator that acts on a single
+     * word (uppercase it, look it up, run a linter on the identifier you
+     * just typed). Visual mode refuses it -- the cursor there extends a
+     * selection, not a word. */
+    CMD_INPUT_WORD
 } XenoedCommandInput;
 
 typedef struct {
@@ -134,13 +147,16 @@ typedef struct {
  * their own). A sentinel avoids that regardless of how many real entries
  * exist. KEEP THE SENTINEL as the last entry.
  *
- * The two "lowercase" and "format_table" entries are real, functional
+ * The "lowercase" and "format_table" entries are real, functional
  * one-liners (perl/column are present on any system with a decent base
  * install): selecting some text and running them via the ':' picker
  * actually transforms the selection, which is exactly the point of this
  * table. They're read-only examples of the CMD_INPUT_SELECTION pattern --
  * both only rewrite what you select, and only on CONFIRMED exit-0 success
  * (see main.c's run_filter()), so nothing happens unless you invoke them.
+ * "upper_word" is the same idea one level smaller: "SPACE" then 'u'
+ * uppercases the word under the cursor in place (CMD_INPUT_WORD), the
+ * normal-mode singleton cut of the same perl one-liner.
  * "indent.sh" and the commented examples exist as dispatch-mechanism
  * placeholders that fail closed with a status message. Replace and add
  * entries freely; the leader key, the Ctrl key, the plain key and the ':'
@@ -151,8 +167,9 @@ static const XenoedCommand XENOED_COMMANDS[] = {
     { "lowercase",      "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
     { "uppercase",      "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
     { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "upper_word",     "perl -pe '$_ = uc'",      XENOED_KEY_LEADER('u'), CMD_INPUT_WORD },
 
-    /*{ "script",   "/home/fx/src/x/xenoed/script.sh", XENOED_KEY_CTRL('t'),   CMD_INPUT_SELECTION },*/
+    { "script",   "/home/fx/src/x/xenoed/script.sh", XENOED_KEY_CTRL('t'),   CMD_INPUT_WORD },
 
     /*{ "example_plain",  "your-script-here",           XENOED_KEY_PLAIN('e'),  CMD_INPUT_NONE },*/
     /*{ "example_picker", "your-script-here",           XENOED_KEY_NONE,        CMD_INPUT_BUFFER },*/

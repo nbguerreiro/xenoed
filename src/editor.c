@@ -436,6 +436,68 @@ int editor_get_selection_text(const Editor *ed, char **out_text, size_t *out_len
     return 1;
 }
 
+/* A "word" is a maximal run of non-whitespace bytes; whitespace here means
+ * ASCII ' \t\r\n\v\f', none of which is ever a UTF-8 continuation byte, so
+ * scanning the bytes directly stays correct for multi-byte text. The cursor
+ * rests on a character in normal mode, on a boundary in insert mode; either
+ * way, span outward from it: first the run containing the cursor, then the
+ * word that ends just left of a whitespace run the cursor sits in, then the
+ * first word to the right. Returns 0 only when the line is empty or all
+ * whitespace. */
+static int word_bounds(const Editor *ed, size_t *wstart, size_t *wend) {
+    const Line *l = buffer_line(ed->buf, ed->cur_line);
+    size_t len = l->len;
+    if (len == 0) return 0;
+
+    size_t col = ed->cur_col;
+    if (col > len) col = len;
+
+    size_t s = col, e = col;
+    while (s > 0 && !isspace((unsigned char)l->data[s - 1])) s--;
+    while (e < len && !isspace((unsigned char)l->data[e])) e++;
+    if (s < e) { *wstart = s; *wend = e; return 1; }
+
+    /* Cursor on whitespace: prefer the word ending just left of it. */
+    if (s > 0) {
+        size_t ls = s;
+        while (ls > 0 && isspace((unsigned char)l->data[ls - 1])) ls--;
+        if (ls > 0) { /* a real word must precede the whitespace run */
+            size_t ws = ls;
+            while (ws > 0 && !isspace((unsigned char)l->data[ws - 1])) ws--;
+            if (ws < ls) {
+                *wstart = ws;
+                *wend = ls; /* exclusive end of the word */
+                return 1;
+            }
+        }
+    }
+
+    /* ...otherwise the first word to the right. */
+    size_t rs = e;
+    while (rs < len && isspace((unsigned char)l->data[rs])) rs++;
+    if (rs < len) {
+        size_t re = rs;
+        while (re < len && !isspace((unsigned char)l->data[re])) re++;
+        *wstart = rs;
+        *wend = re;
+        return 1;
+    }
+    return 0;
+}
+
+int editor_get_word_text(const Editor *ed, char **out_text, size_t *out_len) {
+    size_t ws, we;
+    if (!word_bounds(ed, &ws, &we)) return 0;
+
+    const Line *l = buffer_line(ed->buf, ed->cur_line);
+    char *out = malloc(we - ws);
+    if (!out) _exit(1);
+    memcpy(out, l->data + ws, we - ws);
+    *out_text = out;
+    *out_len = we - ws;
+    return 1;
+}
+
 static void editor_set_yank(Editor *ed, char *text, size_t len) {
     free(ed->yank_text);
     ed->yank_text = text;
@@ -576,6 +638,20 @@ int editor_replace_selection_text(Editor *ed, const char *text, size_t len) {
         ed->buf->dirty = 1;
         editor_clamp_cursor(ed);
     }
+    return 1;
+}
+
+int editor_replace_word_text(Editor *ed, const char *text, size_t len) {
+    size_t ws, we;
+    if (!word_bounds(ed, &ws, &we)) return 0;
+
+    editor_checkpoint(ed);
+    Line *l = buffer_line(ed->buf, ed->cur_line);
+    line_delete_bytes(l, ws, we - ws);
+    if (len > 0) line_insert_bytes(l, ws, text, len);
+    ed->cur_col = ws;
+    ed->buf->dirty = 1;
+    editor_clamp_cursor(ed);
     return 1;
 }
 
@@ -916,10 +992,22 @@ void editor_cut_selection(Editor *ed) {
 
 static void editor_request_user_command(Editor *ed, int index) {
     const XenoedCommand *cmd = &XENOED_COMMANDS[index];
+    const char *label = cmd->name ? cmd->name : cmd->script;
 
     if (cmd->input == CMD_INPUT_SELECTION && !editor_has_selection(ed)) {
-        set_status(ed, "E: %s needs a selection", cmd->name ? cmd->name : cmd->script);
+        set_status(ed, "E: %s needs a selection", label);
         return;
+    }
+    if (cmd->input == CMD_INPUT_WORD) {
+        if (ed->mode == MODE_VISUAL) {
+            set_status(ed, "E: %s is a normal-mode command", label);
+            return;
+        }
+        size_t ws, we;
+        if (!word_bounds(ed, &ws, &we)) {
+            set_status(ed, "E: no word under cursor");
+            return;
+        }
     }
 
     if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;

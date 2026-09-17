@@ -609,6 +609,11 @@ static void run_user_command(Editor *ed, const char *filename) {
             input_text[off++] = '\n';
         }
         input_len = total;
+    } else if (cmd->input == CMD_INPUT_WORD) {
+        if (!editor_get_word_text(ed, &input_text, &input_len)) {
+            snprintf(ed->status, sizeof(ed->status), "E: no word under cursor");
+            return;
+        }
     } else {
         if (!editor_get_selection_text(ed, &input_text, &input_len)) {
             snprintf(ed->status, sizeof(ed->status), "E: %s needs a selection", label);
@@ -627,6 +632,8 @@ static void run_user_command(Editor *ed, const char *filename) {
 
     if (cmd->input == CMD_INPUT_BUFFER) {
         editor_replace_buffer_text(ed, output, output_len);
+    } else if (cmd->input == CMD_INPUT_WORD) {
+        editor_replace_word_text(ed, output, output_len);
     } else {
         editor_paste_text(ed, output, output_len);
     }
