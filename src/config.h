@@ -104,9 +104,11 @@ typedef enum {
 
 typedef struct {
     const char *name;   /* shown in the ':' picker; NULL = don't list it there */
-    const char *script; /* passed to execvp -- a bare name searches $PATH,
-                          * anything containing '/' is used as-is, exactly
-                          * like grep/dmenu are already invoked elsewhere */
+    const char *script; /* a command line, tokenized like a shell (single and
+                          * double quotes, backslash escapes). A bare program
+                          * name searches $PATH; anything containing '/' is
+                          * used as-is. A multi-word one-liner (e.g.
+                          * "perl -pe '$_ = lc'") runs exactly as written. */
     XenoedKey key;      /* how to run this directly: XENOED_KEY_LEADER('i')
                           * for SPACE then i, XENOED_KEY_CTRL('i') for Ctrl+i,
                           * XENOED_KEY_PLAIN('i') for i alone, or
@@ -114,12 +116,15 @@ typedef struct {
     XenoedCommandInput input;
 } XenoedCommand;
 
-/* The script always receives the current file's path as argv[1] (an empty
- * string if there isn't one yet) -- unconditionally, regardless of
- * `input`, so there's no separate placeholder for it. A script that wants
- * to know its own language from the file extension, or just wants to
- * operate on a named file directly (CMD_INPUT_NONE) rather than through
- * stdin/stdout, always has it available.
+/* A bare program name (a single word, no spaces) receives the current file's
+ * path as argv[1] (an empty string if there isn't one yet) -- the historical
+ * contract that lets a script know its own language from the file extension,
+ * or operate on a named file directly (CMD_INPUT_NONE) rather than through
+ * stdin/stdout. A multi-word one-liner, by contrast, is executed exactly as
+ * written: like the '!' filter, it reads the buffer/selection on stdin and is
+ * NOT given the filename as an argument, so "perl -pe '$_ = lc'" keeps
+ * filtering stdin instead of being told to open the file. To read the
+ * filename itself in a one-liner, keep it as a separate field of your own.
  *
  * NULL-terminated, not sized by sizeof/sizeof: an array with a compile-
  * time-known length of zero isn't valid standard C (verified this
@@ -129,27 +134,22 @@ typedef struct {
  * their own). A sentinel avoids that regardless of how many real entries
  * exist. KEEP THE SENTINEL as the last entry.
  *
- * Real (uncommented), but harmless by construction: "indent.sh" and
- * "your-script-here" don't exist on any real system, so these entries can
- * never accidentally do something unexpected to your buffer before you've
- * replaced them with real scripts of your own -- output only ever gets
- * applied on a CONFIRMED exit-0 success (see main.c's run_filter()), so a
- * missing script just fails closed with a status message, regardless of
- * input kind. Kept uncommented specifically so the dispatch mechanism
- * itself -- the leader key, the Ctrl key, the plain key, the ':' picker,
- * the "needs a selection" check -- is exercised and testable even before
- * you've written a single script. Replace the script paths (and add your
- * own entries) freely; SPACE then 'i', Ctrl+t, plain 'e', or ":" then the
- * name, will each show its binding is wired up correctly and safely before
- * anything real is behind it. 'e' happens not to collide with any of
- * xenoed's own keys; a plain binding that DOES (say 'j' or ':' in
- * normal mode) prints a startup warning to stderr as a heads-up, then
- * shadows the built-in -- the plain namespace is deliberately unchecked.
+ * The two "lowercase" and "format_table" entries are real, functional
+ * one-liners (perl/column are present on any system with a decent base
+ * install): selecting some text and running them via the ':' picker
+ * actually transforms the selection, which is exactly the point of this
+ * table. They're read-only examples of the CMD_INPUT_SELECTION pattern --
+ * both only rewrite what you select, and only on CONFIRMED exit-0 success
+ * (see main.c's run_filter()), so nothing happens unless you invoke them.
+ * "indent.sh" and the commented examples exist as dispatch-mechanism
+ * placeholders that fail closed with a status message. Replace and add
+ * entries freely; the leader key, the Ctrl key, the plain key and the ':'
+ * picker all dispatch through the same path.
  */
 static const XenoedCommand XENOED_COMMANDS[] = {
-    { "indent",         "indent.sh",                  XENOED_KEY_LEADER('i'), CMD_INPUT_BUFFER },
-
-    { "lowercase",   "perl -pe '$_ = lc'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "indent",         "indent.sh",               XENOED_KEY_LEADER('i'), CMD_INPUT_BUFFER },
+    { "lowercase",      "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "uppercase",      "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
     { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
 
     /*{ "script",   "/home/fx/src/x/xenoed/script.sh", XENOED_KEY_CTRL('t'),   CMD_INPUT_SELECTION },*/

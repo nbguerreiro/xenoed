@@ -18,6 +18,7 @@
 
 #include "buffer.h"
 #include "cmdhist.h"
+#include "cmdline.h"
 #include "config.h"
 #include "editor.h"
 #include "render.h"
@@ -359,9 +360,39 @@ static void perform_search(Editor *ed) {
     free(matches);
 }
 
+/* Split `script` into an execvp-ready argv (NULL-terminated). A bare program
+ * name (a single word) gets `filename` injected at argv[1], preserving the
+ * old `execlp(script, script, filename)` contract for whole scripts. A
+ * multi-word one-liner like "perl -pe '$_ = lc'" is executed exactly as
+ * written -- the filename is NOT appended -- so stdin filters keep reading
+ * the piped buffer/selection instead of accidentally opening the file.
+ * Returns the argv on success (caller frees with xenoed_free_argv), or NULL
+ * on a malformed command line or allocation failure. */
+static char **build_exec_argv(const char *script, const char *filename) {
+    char **argv;
+    int argc = xenoed_split_cmdline(script, &argv);
+    if (argc <= 0) return NULL;
+
+    if (argc == 1) {
+        char **na = realloc(argv, 3 * sizeof(char *));
+        if (!na) { xenoed_free_argv(argv); return NULL; }
+        argv = na;
+        argv[2] = NULL;
+        argv[1] = strdup(filename ? filename : "");
+        if (!argv[1]) { xenoed_free_argv(argv); return NULL; }
+    }
+    return argv;
+}
+
 static void run_detached(const char *script, const char *filename) {
+    char **argv = build_exec_argv(script, filename);
+    if (!argv) {
+        fprintf(stderr, "xenoed: bad external command: %s\n", script);
+        return;
+    }
+
     pid_t pid = fork();
-    if (pid < 0) return;
+    if (pid < 0) { xenoed_free_argv(argv); return; }
 
     if (pid == 0) {
         pid_t pid2 = fork();
@@ -372,24 +403,33 @@ static void run_detached(const char *script, const char *filename) {
                 dup2(devnull, STDOUT_FILENO);
                 dup2(devnull, STDERR_FILENO);
             }
-            execlp(script, script, filename, (char *)NULL);
+            execvp(argv[0], argv);
             _exit(127);
         }
         _exit(0);
     }
     waitpid(pid, NULL, 0);
+    xenoed_free_argv(argv);
 }
 
 static char *run_filter(const char *script, const char *filename,
                          const char *input, size_t input_len, size_t *out_len) {
+    char **argv = build_exec_argv(script, filename);
+    if (!argv) return NULL;
+
     int inpipe[2], outpipe[2];
-    if (pipe(inpipe) != 0) return NULL;
-    if (pipe(outpipe) != 0) { close(inpipe[0]); close(inpipe[1]); return NULL; }
+    if (pipe(inpipe) != 0) { xenoed_free_argv(argv); return NULL; }
+    if (pipe(outpipe) != 0) {
+        close(inpipe[0]); close(inpipe[1]);
+        xenoed_free_argv(argv);
+        return NULL;
+    }
 
     pid_t script_pid = fork();
     if (script_pid < 0) {
         close(inpipe[0]); close(inpipe[1]);
         close(outpipe[0]); close(outpipe[1]);
+        xenoed_free_argv(argv);
         return NULL;
     }
     if (script_pid == 0) {
@@ -397,7 +437,7 @@ static char *run_filter(const char *script, const char *filename,
         dup2(outpipe[1], STDOUT_FILENO);
         close(inpipe[0]); close(inpipe[1]);
         close(outpipe[0]); close(outpipe[1]);
-        execlp(script, script, filename, (char *)NULL);
+        execvp(argv[0], argv);
         _exit(127);
     }
 
@@ -432,6 +472,7 @@ static char *run_filter(const char *script, const char *filename,
                 close(outpipe[0]);
                 waitpid(script_pid, NULL, 0);
                 if (writer_pid > 0) waitpid(writer_pid, NULL, 0);
+                xenoed_free_argv(argv);
                 return NULL;
             }
             out = new_out;
@@ -444,6 +485,7 @@ static char *run_filter(const char *script, const char *filename,
     int status = 0;
     waitpid(script_pid, &status, 0);
     if (writer_pid > 0) waitpid(writer_pid, NULL, 0);
+    xenoed_free_argv(argv);
 
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
         free(out);

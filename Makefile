@@ -33,7 +33,7 @@ fanalyzer: CFLAGS += -g -O1 -fanalyzer
 
 sanitize: CFLAGS += -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
 
-SRC := src/main.c src/editor.c src/buffer.c src/render.c src/repeat.c src/cmdhist.c
+SRC := src/main.c src/editor.c src/buffer.c src/render.c src/repeat.c src/cmdhist.c src/cmdline.c
 
 all: main
 debug: main
@@ -53,11 +53,15 @@ test-cmdhist: tests/test_cmdhist.c src/cmdhist.c
 	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o tests/test_cmdhist tests/test_cmdhist.c src/cmdhist.c
 	./tests/test_cmdhist
 
+test-cmdline: tests/test_cmdline.c src/cmdline.c
+	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o tests/test_cmdline tests/test_cmdline.c src/cmdline.c
+	./tests/test_cmdline
+
 lint:
 	cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr $(SRC) 2>&1 | tee lint.log;
 
 clean:
-	rm -rfv $(BIN) $(TEST_BIN) tests/test_cmdhist reports src/*.o *.s *.bc *.db *.log
+	rm -rfv $(BIN) $(TEST_BIN) tests/test_cmdhist tests/test_cmdline reports src/*.o *.s *.bc *.db *.log
 
 install:
 	cp $(BIN) ${HOME}/.local/bin/xenoed

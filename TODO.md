@@ -15,14 +15,21 @@
 - [x] 13. remember commands
 - [x] 14. : should work on selection (visual mode)
 - [x] 15. Search and replace
+
 - [x] 16. XENOED_COMMANDS should accept commands starting with 'leader', 'control', or just plain letters.
   { "com1", "external_com", '<leader>e', CMD_INPUT_BUFFER },
   { "com2", "external_com", '<c>e', CMD_INPUT_BUFFER },
   { "com3", "external_com", 'e', CMD_INPUT_BUFFER },
   { "com4", "external_com", 0, CMD_INPUT_BUFFER },
-- [ ] 17. block cursor should be a hollow rectangle when window is not in focus
-- [ ] 18. tags
-- [ ] 19. spell
+
+- [x] 17. XENOED_COMMANDS should work with 'oneliners'
+    for example:
+    { "lowercase",   "perl -pe '$_ = lc'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+
+- [ ] 18. block cursor should be a hollow rectangle when window is not in focus
+- [ ] 19. tags
+- [ ] 20. spell
 
 
 

@@ -16,6 +16,7 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   don't treat that as a regression you introduced.
 - Tests are headless (no X display needed):
   - `make test-cmdhist` works.
+  - `make test-cmdline` (the XENOED_COMMANDS one-liner tokenizer) works.
   - `make test` (repeat tests) is **currently broken**: the recipe never links
     libX11, but `src/repeat.c` now needs it → undefined `XOpenDisplay`/
     `XQueryTree`. Fix by adding `-lX11` to the `tests/test_repeat` link.
@@ -32,7 +33,10 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   loop, and **all** subprocesses (grep search, `${DMENU:-dmenu} -w ...`
   pickers, filter pipes). `src/render.c` Cairo/Pango drawing; `src/utf8.h`
   header-only boundary helpers; `src/cmdhist.c` most-used-command history in
-  `$XDG_STATE_HOME/xenoed/` (fallback `~/.local/state/xenoed/`).
+  `$XDG_STATE_HOME/xenoed/` (fallback `~/.local/state/xenoed/`);
+  `src/cmdline.c` is a small X11-free tokenizer that splits a shell-style
+  command line (single/double quotes, backslash escapes, no expansion) into
+  an argv -- what lets `XENOED_COMMANDS` entries be one-liners.
 - **Biggest gotcha**: the `.` repeat command and the `/` search prompt are NOT
   in `editor.c` — they live in `src/repeat.c` as ELF linker wrappers. Both the
   binary and tests link with `-Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key`;
@@ -67,9 +71,12 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   and the `XENOED_COMMANDS` external-command table. The README's
   `make EXTRA_CFLAGS=...` override is **stale** — the Makefile never references
   `EXTRA_CFLAGS`; change defaults in config.h (or carefully via `make CFLAGS=...`,
-  which drops the pkg-config include/lib flags). Script entries are `execvp`'d as
-  a bare program name — no spaces/args (the shipped `column -t -s '|' -o '|'`
-  example can't actually run; only applied on confirmed exit 0, so harmless).
+  which drops the pkg-config include/lib flags). `XENOED_COMMANDS` script
+  entries are tokenized by src/cmdline.c and `execvp`'d: a bare single-word
+  program name (like "indent.sh") receives the filename as argv[1], but a
+  multi-word one-liner ("perl -pe '$_ = lc'", "column -t -s '|' -o '|'") runs
+  exactly as written and reads stdin — the filename is NOT appended, so
+  filters keep reading the piped buffer/selection.
   README's claims that main.c is the only X11/multi-OS file and `Sans 12` font
   default are both stale — trust config.h / repeat.c.
 
