@@ -54,7 +54,8 @@ typedef struct {
 
     size_t top_line;   /* first visible line, for vertical scrolling */
 
-    char pending_op;   /* 0, or 'd'/'y' after a lone 'd'/'y' in normal mode, awaiting the repeat */
+    char pending_op;   /* 0, or 'd'/'y'/'m'/'\'' after a lone 'd'/'y'/'m'/'\'' in
+                        * normal mode, awaiting the repeat or the mark letter */
     int leader_pending; /* true right after XENOED_LEADER, awaiting the command key */
 
     char cmdline[256]; /* text typed after '/' (search mode) */
@@ -146,6 +147,13 @@ typedef struct {
     size_t undo_count, undo_cap;
     UndoSnapshot *redo_stack;
     size_t redo_count, redo_cap;
+
+    /* Marks (a-z): named positions the user can jump back to. Each mark
+     * records the line and column where 'm'+letter was pressed; SIZE_MAX
+     * in marks_line means "unset". ' goes to the marked line's column 0,
+     * as in vim. */
+    size_t marks_line[26];
+    size_t marks_col[26];
 
     int want_quit;
 } Editor;

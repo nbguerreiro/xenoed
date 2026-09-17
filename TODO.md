@@ -29,7 +29,7 @@
 
 - [x] 18. send word under cursor to external command
 - [x] 19. block cursor should be a hollow rectangle when window is not in focus
-- [ ] 20. marks
+- [x] 20. marks
 
 
 

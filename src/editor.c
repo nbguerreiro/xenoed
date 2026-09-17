@@ -20,6 +20,7 @@ void editor_init(Editor *ed, Buffer *buf) {
     memset(ed, 0, sizeof(*ed));
     ed->buf = buf;
     ed->mode = MODE_NORMAL;
+    for (int i = 0; i < 26; i++) ed->marks_line[i] = (size_t)-1;
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
         if (XENOED_COMMANDS[i].key.mod == XENOED_MOD_NONE) continue;
         for (int j = i + 1; XENOED_COMMANDS[j].script != NULL; j++) {
@@ -46,7 +47,7 @@ void editor_init(Editor *ed, Buffer *buf) {
      * those never fires from insert mode. ' ' is the leader key: binding it
      * plain would swallow the leader namespace entirely, so that's listed
      * as a built-in too. */
-    const char normal_builtins[] = "hjl k0$GgiaAIoOxdypPuvV  :!/nN";
+    const char normal_builtins[] = "hjl k0$GgiaAIoOxdypPuvV  :!/nN'm";
     const char visual_builtins[] = "hjl k0$ydxpvV:!";
     const char insert_ctrl[] = "xcv";
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
@@ -1132,7 +1133,20 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
     if (ed->pending_op) {
         char op = ed->pending_op;
         ed->pending_op = 0;
-        if (c == op) {
+        if (op == 'm' && c >= 'a' && c <= 'z') {
+            ed->marks_line[c - 'a'] = ed->cur_line;
+            ed->marks_col[c - 'a'] = ed->cur_col;
+            return;
+        } else if (op == '\'' && c >= 'a' && c <= 'z') {
+            if (ed->marks_line[c - 'a'] != (size_t)-1) {
+                ed->cur_line = ed->marks_line[c - 'a'];
+                ed->cur_col = 0;
+                editor_clamp_cursor(ed);
+            } else {
+                set_status(ed, "E: mark '%c' not set", c);
+            }
+            return;
+        } else if (c == op) {
             if (op == 'd') {
                 editor_yank_line(ed);
                 editor_checkpoint(ed);
@@ -1221,6 +1235,8 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
             break;
         case 'd': ed->pending_op = 'd'; break;
         case 'y': ed->pending_op = 'y'; break;
+        case 'm': ed->pending_op = 'm'; break;
+        case '\'': ed->pending_op = '\''; break;
         case 'p': paste_before_requested = 0; ed->paste_requested = 1; break;
         case 'P': paste_before_requested = 1; ed->paste_requested = 1; break;
         case 'u': editor_undo(ed); break;

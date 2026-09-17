@@ -1817,6 +1817,60 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 87: 'm'+letter sets a mark at the cursor; '''+letter jumps back
+     * to that line at column 0, vim-style */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ialpha<CR>beta<CR>gamma<Esc>");
+        ed.cur_line = 2; ed.cur_col = 0; /* on "gamma" */
+        feed(&ed, "ma");                 /* mark 'a' at line 2 */
+        CHECK(ed.marks_line['a' - 'a'] == 2);
+        CHECK(ed.marks_col['a' - 'a'] == 0);
+        ed.cur_line = 0; ed.cur_col = 3; /* wander back up */
+        feed(&ed, "'a");
+        printf("Test 87 (mark set + jump): line=%zu col=%zu\n", ed.cur_line, ed.cur_col);
+        CHECK(ed.cur_line == 2);
+        CHECK(ed.cur_col == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 88: a mark stores the column where it was set, but ''' still
+     * lands on column 0 of the marked line (vim behavior) */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        ed.cur_line = 0; ed.cur_col = 4; /* on the 'o' */
+        feed(&ed, "ma");
+        CHECK(ed.marks_line[0] == 0 && ed.marks_col[0] == 4);
+        ed.cur_col = 1;
+        feed(&ed, "'a");
+        printf("Test 88 (mark col stored, jump goes to col 0): col=%zu\n", ed.cur_col);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 89: jumping to an unset mark reports an error and doesn't move */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ione<CR>two<Esc>");
+        ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, "'z");
+        printf("Test 89 (jump to unset mark): status=\"%s\"\n", ed.status);
+        CHECK(ed.marks_line['z' - 'a'] == (size_t)-1);
+        CHECK(strstr(ed.status, "not set") != NULL);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

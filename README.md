@@ -66,6 +66,8 @@ make EXTRA_CFLAGS='-DXENOED_FONT="Inter Variable @wght=650,opsz=18"'   # variabl
 | `!` | filter the whole buffer through a shell command (dmenu prompt) |
 | `/` | search forward (see below) |
 | `n` / `N` | repeat the last search, forward / backward |
+| `m` then a-z | set a named mark at the cursor's line and column |
+| `'` then a-z | jump to the named mark's line (column 0) |
 | `:` | open the command picker (see below) |
 | `SPACE` then a key | run a user-defined external command (see below) |
 | `Esc` | (no-op in normal mode) |
