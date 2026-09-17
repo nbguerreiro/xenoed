@@ -27,9 +27,10 @@
     { "lowercase",   "perl -pe '$_ = lc'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
     { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
 
-- [ ] 18. block cursor should be a hollow rectangle when window is not in focus
-- [ ] 19. tags
-- [ ] 20. spell
+- [ ] 18. send word under cursor to external command
+- [ ] 19. block cursor should be a hollow rectangle when window is not in focus
+- [ ] 20. tags
+- [ ] 21. spell
 
 
 
