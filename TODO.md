@@ -28,9 +28,9 @@
     { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
 
 - [x] 18. send word under cursor to external command
-- [ ] 19. block cursor should be a hollow rectangle when window is not in focus
-- [ ] 20. tags
-- [ ] 21. spell
+- [x] 19. block cursor should be a hollow rectangle when window is not in focus
+- [ ] 20. marks
+
 
 
 

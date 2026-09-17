@@ -61,8 +61,8 @@ static void backbuffer_present(Backbuffer *bb) {
     XFlush(bb->dpy);
 }
 
-static void redraw(RenderState *rs, Backbuffer *bb, Editor *ed, int width, int height) {
-    render_frame(rs, bb->surface, ed, width, height);
+static void redraw(RenderState *rs, Backbuffer *bb, Editor *ed, int width, int height, int focused) {
+    render_frame(rs, bb->surface, ed, width, height, focused);
     cairo_surface_flush(bb->surface);
     backbuffer_present(bb);
 }
@@ -982,7 +982,8 @@ int main(int argc, char **argv) {
 
     XSelectInput(dpy, win,
                  KeyPressMask | ExposureMask | StructureNotifyMask |
-                 ButtonPressMask | ButtonReleaseMask | Button1MotionMask);
+                 ButtonPressMask | ButtonReleaseMask | Button1MotionMask |
+                 FocusChangeMask);
 
     Atom wm_delete = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
     XSetWMProtocols(dpy, win, &wm_delete, 1);
@@ -1015,7 +1016,9 @@ int main(int argc, char **argv) {
     RenderState rs;
     render_init(&rs, font_desc);
 
-    redraw(&rs, &bb, &ed, width, height);
+    int focused = 1;
+
+    redraw(&rs, &bb, &ed, width, height, focused);
     XMapWindow(dpy, win);
 
     int running = 1;
@@ -1036,7 +1039,7 @@ int main(int argc, char **argv) {
                     width = ev.xconfigure.width;
                     height = ev.xconfigure.height;
                     backbuffer_resize(&bb, width, height);
-                    redraw(&rs, &bb, &ed, width, height);
+                    redraw(&rs, &bb, &ed, width, height, focused);
                 }
                 break;
 
@@ -1056,12 +1059,12 @@ int main(int argc, char **argv) {
                     editor_selection_clear(&ed);
                     mouse_dragging = 1;
                     sync_primary_ownership(dpy, win, &ed, &sel);
-                    redraw(&rs, &bb, &ed, width, height);
+                    redraw(&rs, &bb, &ed, width, height, focused);
                 } else if (ev.xbutton.button == Button3) {
                     show_context_menu(dpy, win, &ed);
                     process_editor_side_effects(dpy, win, &ed, &sel);
                     sync_primary_ownership(dpy, win, &ed, &sel);
-                    redraw(&rs, &bb, &ed, width, height);
+                    redraw(&rs, &bb, &ed, width, height, focused);
                 } else if (ev.xbutton.button == Button4 || ev.xbutton.button == Button5) {
                     /* Classic X11 mouse wheel: Button4 = up, Button5 = down.
                      * Works in any mode; cursor is kept in the viewport so
@@ -1071,7 +1074,7 @@ int main(int argc, char **argv) {
                         ? -XENOED_SCROLL_LINES : XENOED_SCROLL_LINES;
                     editor_scroll_by(&ed, delta, (size_t)visible_rows);
                     sync_primary_ownership(dpy, win, &ed, &sel);
-                    redraw(&rs, &bb, &ed, width, height);
+                    redraw(&rs, &bb, &ed, width, height, focused);
                 }
                 break;
 
@@ -1085,7 +1088,7 @@ int main(int argc, char **argv) {
                         ed.cur_col = c;
                         editor_clamp_cursor(&ed);
                         sync_primary_ownership(dpy, win, &ed, &sel);
-                        redraw(&rs, &bb, &ed, width, height);
+                        redraw(&rs, &bb, &ed, width, height, focused);
                     }
                 }
                 break;
@@ -1164,9 +1167,19 @@ int main(int argc, char **argv) {
                 }
 
                 sync_primary_ownership(dpy, win, &ed, &sel);
-                redraw(&rs, &bb, &ed, width, height);
+                redraw(&rs, &bb, &ed, width, height, focused);
                 break;
             }
+
+            case FocusIn:
+                focused = 1;
+                redraw(&rs, &bb, &ed, width, height, focused);
+                break;
+
+            case FocusOut:
+                focused = 0;
+                redraw(&rs, &bb, &ed, width, height, focused);
+                break;
 
             default:
                 break;

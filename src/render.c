@@ -68,7 +68,8 @@ int render_visible_rows(const RenderState *rs, int height) {
 }
 
 static void draw_cursor(cairo_t *cr, RenderState *rs, PangoLayout *layout,
-                         size_t byte_index, int row_y, int fallback_w, int block_mode) {
+                         size_t byte_index, int row_y, int fallback_w,
+                         int block_mode, int focused) {
     PangoRectangle rect;
     pango_layout_index_to_pos(layout, (int)byte_index, &rect);
 
@@ -77,9 +78,16 @@ static void draw_cursor(cairo_t *cr, RenderState *rs, PangoLayout *layout,
     if (cw <= 0) cw = fallback_w;
 
     if (block_mode) {
-        cairo_set_source_rgba(cr, CURSOR_R, CURSOR_G, CURSOR_B, 0.45);
-        cairo_rectangle(cr, cx, row_y, cw, rs->row_height);
-        cairo_fill(cr);
+        if (focused) {
+            cairo_set_source_rgba(cr, CURSOR_R, CURSOR_G, CURSOR_B, 0.45);
+            cairo_rectangle(cr, cx, row_y, cw, rs->row_height);
+            cairo_fill(cr);
+        } else {
+            cairo_set_source_rgba(cr, CURSOR_R, CURSOR_G, CURSOR_B, 0.6);
+            cairo_set_line_width(cr, 2);
+            cairo_rectangle(cr, cx + 1, row_y + 1, cw - 2, rs->row_height - 2);
+            cairo_stroke(cr);
+        }
     } else {
         cairo_set_source_rgb(cr, CURSOR_R, CURSOR_G, CURSOR_B);
         cairo_rectangle(cr, cx, row_y, 2, rs->row_height);
@@ -105,7 +113,7 @@ static void draw_selection_row(cairo_t *cr, RenderState *rs, PangoLayout *layout
     cairo_fill(cr);
 }
 
-void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int width, int height) {
+void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int width, int height, int focused) {
     cairo_t *cr = cairo_create(surface);
     cairo_set_source_rgb(cr, BG_R, BG_G, BG_B);
     cairo_paint(cr);
@@ -138,7 +146,7 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         }
 
         if (line_idx == ed->cur_line && ed->mode != MODE_INSERT) {
-            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 1);
+            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 1, focused);
         }
 
         cairo_set_source_rgb(cr, FG_R, FG_G, FG_B);
@@ -146,7 +154,7 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         pango_cairo_show_layout(cr, layout);
 
         if (line_idx == ed->cur_line && ed->mode == MODE_INSERT) {
-            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 0);
+            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 0, focused);
         }
 
         g_object_unref(layout);

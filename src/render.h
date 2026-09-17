@@ -21,7 +21,7 @@ void render_init(RenderState *rs, PangoFontDescription *font_desc);
  * `surface`, which must already be sized to width x height pixels. Also
  * calls editor_ensure_visible() for scrolling based on the computed number
  * of visible rows. */
-void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int width, int height);
+void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int width, int height, int focused);
 
 /* Number of text rows that fit in a window of the given pixel height,
  * reserving one row at the bottom for the status/command line. */
