@@ -167,13 +167,16 @@ typedef struct {
  * picker all dispatch through the same path.
  */
 static const XenoedCommand XENOED_COMMANDS[] = {
-    { "indent",         "indent.sh",               XENOED_KEY_LEADER('i'), CMD_INPUT_BUFFER },
-    { "lowercase",      "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
-    { "uppercase",      "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
-    { "upper_word",     "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
-    { "lowercase_word", "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
-    { "format_table",   "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
-    { "tag_goto",       "tag_goto.sh",             XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
+    { "indent",                 "indent.sh",               XENOED_KEY_LEADER('i'), CMD_INPUT_BUFFER },
+    { "lowercase",            "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "uppercase",            "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "upper_word",          "perl -pe '$_ = uc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
+    { "lowercase_word",   "perl -pe '$_ = lc'",      XENOED_KEY_NONE,   CMD_INPUT_WORD },
+    { "format_table",        "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
+    { "tag_goto",              "tag_goto.sh",             XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
+    { "man",                     "man.sh",             XENOED_KEY_LEADER('k'),   CMD_INPUT_WORD },
+
+    /*man K*/
 
     { NULL, NULL, XENOED_KEY_NONE, CMD_INPUT_NONE } /* sentinel -- must stay last */
 };
