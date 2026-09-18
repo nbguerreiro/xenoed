@@ -64,7 +64,7 @@ clean:
 	rm -rfv $(BIN) $(TEST_BIN) tests/test_cmdhist tests/test_cmdline reports src/*.o *.s *.bc *.db *.log
 
 install:
-	cp $(BIN) ${HOME}/.local/bin/xenoed
+	cp -f $(BIN) ${HOME}/.local/bin/xenoed
 	chmod 755 ${HOME}/.local/bin/xenoed
 
 uninstall:
