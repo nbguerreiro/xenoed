@@ -257,6 +257,16 @@ int editor_replace_selection_text(Editor *ed, const char *text, size_t len);
  * (editor_request_user_command already refuses visual-mode trigger). */
 int editor_replace_word_text(Editor *ed, const char *text, size_t len);
 
+/* Replaces the word under the cursor with `text` as one undo step,
+ * exactly like editor_replace_word_text, but lands the cursor AFTER the
+ * replacement instead of on its first character -- the
+ * CMD_INPUT_INSERT_WORD counterpart, for completion: main.c feeds the
+ * partial word under the cursor to the script on stdin, then calls this
+ * with the completed candidate, leaving insert mode's cursor past it so
+ * typing continues. Same "no word under cursor => returns 0" and
+ * empty-text-deletes-the-word behavior. */
+int editor_replace_word_text_at_end(Editor *ed, const char *text, size_t len);
+
 /* Copy/cut for mouse- or menu-driven callers (the right-click context
  * menu), deliberately NOT sharing code with visual-mode 'y' despite doing
  * almost the same thing: keyboard 'y' follows vim's convention of exiting

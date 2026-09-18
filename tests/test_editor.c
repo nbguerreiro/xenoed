@@ -2345,6 +2345,113 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 104: editor_replace_word_text_at_end swaps the word in place
+     * like its sibling, but lands the cursor AFTER the replacement -- the
+     * completion shape -- and stays in whatever mode it was called in
+     * (insert mode, for CMD_INPUT_INSERT_WORD). */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihel world<Esc>");            /* line "hel world" */
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 4; /* 'w' of "world" */
+        CHECK(editor_replace_word_text_at_end(&ed, "wonder", 6));
+        printf("Test 104 (replace_word_text_at_end):\n"); dump(b);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hel wonder") == 0);
+        CHECK(ed.cur_col == 10); /* after the replacement, not on its first char */
+        CHECK(ed.mode == MODE_INSERT);
+        ed.mode = MODE_NORMAL;
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "hel world") == 0); /* one undo step */
+
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 4; /* 'w' of "world" again */
+        CHECK(editor_replace_word_text_at_end(&ed, "", 0)); /* empty deletes */
+        CHECK(strcmp(buffer_line(b, 0)->data, "hel ") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 105: a Ctrl binding to a CMD_INPUT_INSERT_WORD command fires from
+     * insert mode -- same request-only handoff as Test 98, main.c does the
+     * subprocess and calls editor_replace_word_text_at_end(). The editor
+     * stays in insert mode and the buffer is untouched so far. */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        char key = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_INSERT_WORD &&
+                XENOED_COMMANDS[i].key.mod == XENOED_MOD_CTRL) {
+                idx = i;
+                key = XENOED_COMMANDS[i].key.key;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        char ctrlkeys[2] = { ctrl_byte_for_key(key), '\0' };
+        CHECK(ctrlkeys[0] != 0);
+        feed(&ed, "ihel<Esc>");
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 3; /* after "hel" */
+        feed(&ed, ctrlkeys);
+        printf("Test 105 (Ctrl+%c from insert mode requests insert-word command): requested=%d index=%d mode=%d\n",
+               key, ed.user_command_requested, ed.user_command_index, ed.mode);
+        CHECK(ed.user_command_requested);
+        CHECK(ed.user_command_index == idx);
+        CHECK(ed.mode == MODE_INSERT);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hel") == 0);
+        /* the same command works from the ':'-name path in normal mode */
+        ed.user_command_requested = 0;
+        feed(&ed, "<Esc>");
+        editor_run_command(&ed, XENOED_COMMANDS[idx].name);
+        CHECK(ed.user_command_requested);
+        CHECK(ed.user_command_index == idx);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 106: a CMD_INPUT_INSERT_WORD command needs a word (refused from
+     * a blank line in insert mode with "no word") and refuses visual mode
+     * with an "insert-mode command" reading -- the guard mirrors
+     * CMD_INPUT_WORD's, flipped to the insert family. */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        char key = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_INSERT_WORD &&
+                XENOED_COMMANDS[i].key.mod == XENOED_MOD_CTRL) {
+                idx = i;
+                key = XENOED_COMMANDS[i].key.key;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        char ctrlkeys[2] = { ctrl_byte_for_key(key), '\0' };
+
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 0; /* blank line */
+        feed(&ed, ctrlkeys);
+        printf("Test 106a (insert-word command refused on blank line): status=\"%s\" requested=%d\n",
+               ed.status, ed.user_command_requested);
+        CHECK(!ed.user_command_requested);
+        CHECK(strstr(ed.status, "no word") != NULL);
+
+        feed(&ed, "<Esc>");
+        feed(&ed, "iword<Esc>");
+        feed(&ed, "v"); /* visual mode */
+        editor_run_command(&ed, XENOED_COMMANDS[idx].name);
+        printf("Test 106b (insert-word command refused in visual mode): status=\"%s\" requested=%d mode=%d\n",
+               ed.status, ed.user_command_requested, ed.mode);
+        CHECK(!ed.user_command_requested);
+        CHECK(ed.mode == MODE_VISUAL);
+        CHECK(strstr(ed.status, "insert-mode") != NULL);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

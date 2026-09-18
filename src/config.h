@@ -137,7 +137,21 @@ typedef enum {
      * is the spacebar, so neither can double as a command prefix without
      * swallowing real input -- the table's warning list already treats
      * Ctrl+X/C/V as reserved insert-mode keys for the same reason. */
-    CMD_INPUT_INSERT
+    CMD_INPUT_INSERT,
+
+    /* The insert-mode completion sibling of CMD_INPUT_WORD: the word
+     * under the cursor -- the partial word being typed -- goes to the
+     * script's stdin, and on exit 0 its stdout replaces just that word,
+     * one undo step, with the cursor left AFTER the replacement and the
+     * editor staying in insert mode so typing continues. Same word span
+     * rule as CMD_INPUT_WORD (see above), and same "no word under cursor"
+     * guard. This is the natural binding for a completion system: feed
+     * `foo` in, get `fishfoo` (or whatever the script decides) back out
+     * in place, without ever leaving insert mode. Like CMD_INPUT_INSERT
+     * it fires from INSERT mode via a Ctrl+key binding. Visual mode is
+     * refused the same way CMD_INPUT_WORD refuses it -- neither kind
+     * reads a selection. */
+    CMD_INPUT_INSERT_WORD
 } XenoedCommandInput;
 
 typedef struct {
@@ -191,6 +205,11 @@ typedef struct {
  * mode (CMD_INPUT_INSERT) -- the one input kind whose Ctrl binding fires
  * from insert mode, where plain and leader keys are reserved for the
  * text you're typing (the leader key is the spacebar itself).
+ * "complete_word" is the sibling completion shape: Ctrl+n sends the word
+ * under the cursor -- the half-typed word, in insert mode -- to the
+ * script's stdin, and the script's stdout replaces just that word with
+ * the cursor after it, so a script that echoes a completion candidate
+ * back finishes the word you were typing (CMD_INPUT_INSERT_WORD).
  * "indent.sh" and the commented examples exist as dispatch-mechanism
  * placeholders that fail closed with a status message. Replace and add
  * entries freely; the leader key, the Ctrl key, the plain key and the ':'
@@ -208,6 +227,7 @@ static const XenoedCommand XENOED_COMMANDS[] = {
 
    /* { "insert_date",      "date +%F",               XENOED_KEY_CTRL('d'),    CMD_INPUT_INSERT }, */
     { "script",      "./script.sh",               XENOED_KEY_CTRL('d'),    CMD_INPUT_INSERT },
+    { "complete_word", "./script.sh",     XENOED_KEY_CTRL('n'),    CMD_INPUT_INSERT_WORD },
 
     { NULL, NULL, XENOED_KEY_NONE, CMD_INPUT_NONE } /* sentinel -- must stay last */
 };

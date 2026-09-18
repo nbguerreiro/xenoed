@@ -276,7 +276,8 @@ bindings live in the same single-key namespace as xenoed's own commands,
 so they *can* shadow one (at your discretion -- xenoed warns about it on
 startup), which is why `Ctrl`/leader exist as deliberate alternatives.
 Ctrl bindings are also the only kind that fire from **insert mode** (and
-then only for the `CMD_INPUT_INSERT`/`CMD_INPUT_NONE` input kinds): a
+then only for the `CMD_INPUT_INSERT`, `CMD_INPUT_INSERT_WORD` and
+`CMD_INPUT_NONE` input kinds): a
 plain key is the text you're typing and the leader key is the spacebar
 itself, so neither can double as a command prefix without swallowing real
 input. Tab -- the byte `Ctrl+I` -- is excluded so pressing Tab keeps
@@ -289,9 +290,11 @@ inserting a tab.
 | `CMD_INPUT_SELECTION` | The current selection's text goes to stdin; on exit 0, stdout replaces just that selection. Only reachable from **visual mode** -- normal mode never has an active selection, so triggering one via `:` always reports "needs a selection". This is what makes a direct-keybinding (leader/Ctrl/plain) command with this input kind read as an operator, the same way visual-mode `y`/`d`/`x` already do. |
 | `CMD_INPUT_WORD` | The word under the cursor -- a maximal run of non-whitespace bytes on the current line, spanning into the nearest word when the cursor rests on whitespace -- goes to stdin; on exit 0, stdout replaces just that word, one undo step. **Normal mode only** -- visual mode is refused ("is a normal-mode command") because the cursor there extends a selection, not a word. |
 | `CMD_INPUT_INSERT` | The insert-mode member of the family. No stdin; the script is a producer (`date`, a snippet generator), and on exit 0 its stdout is inserted at the cursor exactly as if typed there -- one undo step, the editor stays in insert mode, cursor left after the inserted text. Trailing newlines (the shell's `date`/`echo`/`cat` ending) are stripped so a date lands inline instead of dragging a dangling blank line in; embedded newlines still split lines as typing would. Reachable from insert mode via a Ctrl binding (with `CMD_INPUT_NONE`, the only two kinds that fire there) and from anywhere via `:`; refused from **visual mode**, same "normal-mode command" rule as WORD. |
+| `CMD_INPUT_INSERT_WORD` | The insert-mode completion sibling of `CMD_INPUT_WORD`: the word under the cursor -- the half-typed word being completed -- goes to stdin; on exit 0, stdout replaces just that word, one undo step, with the cursor left **after** the replacement and the editor staying in insert mode so typing continues. Same word-span rule as `CMD_INPUT_WORD`, same "no word under cursor" guard, same trailing-newline strip as `CMD_INPUT_INSERT` (the script's `echo "$candidate"` lands inline). Refused from **visual mode** -- the cursor there extends a selection, not a word. |
 
-The convenience trigger for `CMD_INPUT_INSERT` is the Ctrl key -- the
-snippet stands in for the characters you were about to type.
+The convenience trigger for `CMD_INPUT_INSERT` and `CMD_INPUT_INSERT_WORD` is
+the Ctrl key -- the snippet stands in for the characters you were about to
+type.
 
 The script's file path is always passed as `argv[1]` (an empty string if
 there isn't one), regardless of input kind -- there's no separate
@@ -313,13 +316,19 @@ the `!` filter), single-word and one-liner alike, so a script can
 identify or raise or embed things in the very xenoed window that spawned
 it without needing the window id passed as an argument.
 
-Six example entries ship uncommented, covering the five input kinds:
-`indent` (CMD_INPUT_BUFFER, leader key), `lowercase` and `uppercase`
-(CMD_INPUT_SELECTION, `:` picker only), `format_table`
-(CMD_INPUT_SELECTION, `:` picker only), `upper_word`
-(CMD_INPUT_WORD, `SPACE then u`), and `insert_date`
-(CMD_INPUT_INSERT, `Ctrl+d` -- try it from insert mode: typing
-`Ctrl+d` runs `date +%F` and the date appears at the cursor). The script names are deliberately
+Ten example entries ship uncommented, covering five of the six input kinds
+(CMD_INPUT_NONE, the detached-launch kind, has no shipped example -- it
+takes no stdin and hands nothing back, so there's nothing to demonstrate
+by example):
+`indent` (CMD_INPUT_BUFFER, leader key), `lowercase`, `uppercase` and
+`format_table` (CMD_INPUT_SELECTION, `:` picker only), `upper_word`,
+`tag_goto` and `man` (CMD_INPUT_WORD), `script`
+(CMD_INPUT_INSERT, `Ctrl+d` -- try it from insert mode: `Ctrl+d` runs
+`./script.sh` and its stdout lands at the cursor), and `complete_word`
+(CMD_INPUT_INSERT_WORD, `Ctrl+n`: the word under the cursor is piped to
+`./complete_word.sh` and its stdout replaces that word, cursor after it --
+wire the script to echo a completion candidate and it finishes the word
+you're typing). The script names are deliberately
 nonexistent or functional one-liners: harmless by construction, since
 output only ever gets applied on a *confirmed* exit-0 success, so a
 missing script just fails closed with a status message regardless of

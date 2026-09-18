@@ -614,6 +614,16 @@ static void run_user_command(Editor *ed, const char *filename) {
             snprintf(ed->status, sizeof(ed->status), "E: no word under cursor");
             return;
         }
+    } else if (cmd->input == CMD_INPUT_INSERT_WORD) {
+        /* The insert-mode completion sibling of CMD_INPUT_WORD: the word
+         * under the cursor (the partial word being typed) goes to the
+         * script's stdin, and on exit 0 its stdout replaces just that
+         * word with the cursor after it (editor_replace_word_text_at_end)
+         * so typing continues. */
+        if (!editor_get_word_text(ed, &input_text, &input_len)) {
+            snprintf(ed->status, sizeof(ed->status), "E: no word under cursor");
+            return;
+        }
     } else if (cmd->input == CMD_INPUT_INSERT) {
         /* No stdin: the script is a producer (date, a snippet generator),
          * not a filter -- its empty stdin is closed and it just writes
@@ -640,6 +650,14 @@ static void run_user_command(Editor *ed, const char *filename) {
         editor_replace_buffer_text(ed, output, output_len);
     } else if (cmd->input == CMD_INPUT_WORD) {
         editor_replace_word_text(ed, output, output_len);
+    } else if (cmd->input == CMD_INPUT_INSERT_WORD) {
+        /* A completion script likely ends its candidate with '\n'
+         * (`echo "$cand"`); drop it so the replacement stays inline, same
+         * trailing-newline reasoning as CMD_INPUT_INSERT below. */
+        while (output_len > 0 &&
+               (output[output_len - 1] == '\n' || output[output_len - 1] == '\r'))
+            output_len--;
+        editor_replace_word_text_at_end(ed, output, output_len);
     } else if (cmd->input == CMD_INPUT_INSERT) {
         /* trailing newline(s) are the shell's doing (`date`, `echo`,
          * `cat` all emit one); drop them so the output sits inline at the

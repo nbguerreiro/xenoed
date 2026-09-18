@@ -67,13 +67,19 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   Ctrl+d entry) is the sibling pair to `CMD_INPUT_NONE`'s "no input": it also
   passes no stdin to the script, but on exit 0 its stdout is inserted at the
   cursor as one undo step by `editor_insert_at_cursor()` (main.c strips the
-  trailing newline(s) first so `date`/`echo` land inline). Inside the editor,
+  trailing newline(s) first so `date`/`echo` land inline).
+  `CMD_INPUT_INSERT_WORD` (sample: the `complete_word` Ctrl+n entry) is the
+  completion sibling of `CMD_INPUT_WORD` in the insert family: it pipes the
+  same word span to stdin but main.c lands the replacement via
+  `editor_replace_word_text_at_end()` -- the replace-word twin that leaves
+  the cursor AFTER the replacement -- so the editor stays in insert mode and
+  typing continues (trailing newline(s) stripped like INSERT). Inside the editor,
   insert-mode dispatch is `editor_dispatch_insert_command()`, the sibling of
   `editor_dispatch_command()`: it only fires Ctrl-bound commands whose input
-  kind is INSERT or NONE (plain keys are text, the leader key is the spacebar,
+  kind is INSERT, INSERT_WORD or NONE (plain keys are text, the leader key is the spacebar,
   so neither is dispatchable mid-typing; `'\t'`/Ctrl+I is excluded to keep Tab
   as text). `editor_request_user_command()` matches WORD's mode guard by
-  refusing everything except INSERT/NONE from MODE_INSERT. `editor.c`'s
+  refusing everything except INSERT/INSERT_WORD/NONE from MODE_INSERT. `editor.c`'s
   `editor_insert_text()` takes a `force_charwise` flag (set by
   `editor_insert_at_cursor`) that disables the trailing-'\n' linewise heuristic
   so inserted command output splits lines exactly as typing would.

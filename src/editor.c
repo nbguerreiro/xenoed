@@ -695,7 +695,8 @@ int editor_replace_selection_text(Editor *ed, const char *text, size_t len) {
     return 1;
 }
 
-int editor_replace_word_text(Editor *ed, const char *text, size_t len) {
+static int editor_replace_word_text_common(Editor *ed, const char *text, size_t len,
+                                           int cursor_at_end) {
     size_t ws, we;
     if (!word_bounds(ed, &ws, &we)) return 0;
 
@@ -703,10 +704,18 @@ int editor_replace_word_text(Editor *ed, const char *text, size_t len) {
     Line *l = buffer_line(ed->buf, ed->cur_line);
     line_delete_bytes(l, ws, we - ws);
     if (len > 0) line_insert_bytes(l, ws, text, len);
-    ed->cur_col = ws;
+    ed->cur_col = cursor_at_end ? ws + len : ws;
     ed->buf->dirty = 1;
     editor_clamp_cursor(ed);
     return 1;
+}
+
+int editor_replace_word_text(Editor *ed, const char *text, size_t len) {
+    return editor_replace_word_text_common(ed, text, len, 0);
+}
+
+int editor_replace_word_text_at_end(Editor *ed, const char *text, size_t len) {
+    return editor_replace_word_text_common(ed, text, len, 1);
 }
 
 void editor_replace_buffer_text(Editor *ed, const char *text, size_t len) {
@@ -1059,9 +1068,10 @@ static void editor_request_user_command(Editor *ed, int index) {
         set_status(ed, "E: %s needs a selection", label);
         return;
     }
-    if (cmd->input == CMD_INPUT_WORD) {
+    if (cmd->input == CMD_INPUT_WORD || cmd->input == CMD_INPUT_INSERT_WORD) {
         if (ed->mode == MODE_VISUAL) {
-            set_status(ed, "E: %s is a normal-mode command", label);
+            set_status(ed, "E: %s is an %s command", label,
+                       cmd->input == CMD_INPUT_WORD ? "normal-mode" : "insert-mode");
             return;
         }
         size_t ws, we;
@@ -1072,14 +1082,17 @@ static void editor_request_user_command(Editor *ed, int index) {
     }
 
     /* From insert mode only the input kinds that make sense mid-typing
-     * are allowed: CMD_INPUT_INSERT (stdout lands at the cursor) and
-     * CMD_INPUT_NONE (detached launch). Everything else is a
-     * normal-mode/visual-mode command -- and the Ctrl dispatch path
+     * are allowed: CMD_INPUT_INSERT (stdout lands at the cursor),
+     * CMD_INPUT_INSERT_WORD (the word under the cursor goes to the script
+     * and its stdout replaces that word -- completion) and CMD_INPUT_NONE
+     * (detached launch). Everything else is a normal-mode/visual-mode
+     * command -- and the Ctrl dispatch path
      * (editor_dispatch_insert_command) already excludes them before
      * calling in, so this is a defense for direct callers, not the
      * normal trigger. */
     if (ed->mode == MODE_INSERT &&
-        cmd->input != CMD_INPUT_INSERT && cmd->input != CMD_INPUT_NONE) {
+        cmd->input != CMD_INPUT_INSERT && cmd->input != CMD_INPUT_INSERT_WORD &&
+        cmd->input != CMD_INPUT_NONE) {
         set_status(ed, "E: %s is a normal-mode command", label);
         return;
     }
@@ -1183,20 +1196,22 @@ static int editor_dispatch_command(Editor *ed, XenoedKeyModifier mod, char key) 
 
 /* Insert-mode counterpart to editor_dispatch_command: only Ctrl bindings,
  * and only those whose input kind makes sense from mid-typing --
- * CMD_INPUT_INSERT (stdout lands at the cursor) and CMD_INPUT_NONE
- * (detached launch). Plain and leader bindings are deliberately NOT
- * dispatched here: a plain key is the text you're typing, and the leader
- * key is the spacebar -- neither can double as a command prefix without
- * swallowing or delaying real input. A Ctrl byte bound to a
- * normal-mode-only command stays as silent as any other unbound control
- * byte, rather than flashing an error after a stray Ctrl+keypress. ' '
- * reaches insert mode as ordinary text; the control-byte namespace is the
- * one spot with room to spare. */
+ * CMD_INPUT_INSERT (stdout lands at the cursor), CMD_INPUT_INSERT_WORD
+ * (the word under the cursor goes to the script, its stdout replaces that
+ * word) and CMD_INPUT_NONE (detached launch). Plain and leader bindings
+ * are deliberately NOT dispatched here: a plain key is the text you're
+ * typing, and the leader key is the spacebar -- neither can double as a
+ * command prefix without swallowing or delaying real input. A Ctrl byte
+ * bound to a normal-mode-only command stays as silent as any other
+ * unbound control byte, rather than flashing an error after a stray
+ * Ctrl+keypress. ' ' reaches insert mode as ordinary text; the
+ * control-byte namespace is the one spot with room to spare. */
 static int editor_dispatch_insert_command(Editor *ed, char key) {
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
         const XenoedCommand *cmd = &XENOED_COMMANDS[i];
         if (cmd->key.mod == XENOED_MOD_CTRL && cmd->key.key == key &&
-            (cmd->input == CMD_INPUT_INSERT || cmd->input == CMD_INPUT_NONE)) {
+            (cmd->input == CMD_INPUT_INSERT || cmd->input == CMD_INPUT_INSERT_WORD ||
+             cmd->input == CMD_INPUT_NONE)) {
             editor_request_user_command(ed, i);
             return 1;
         }
@@ -1675,7 +1690,9 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
 
     /* XENOED_COMMANDS Ctrl bindings fire from insert mode for the input
      * kinds that make sense mid-typing (CMD_INPUT_INSERT inserts stdout
-     * at the cursor; CMD_INPUT_NONE launches detached). '\t' (Ctrl+I) is
+     * at the cursor; CMD_INPUT_INSERT_WORD sends the word under the cursor
+     * to the script and its stdout replaces that word -- completion;
+     * CMD_INPUT_NONE launches detached). '\t' (Ctrl+I) is
      * excluded so a deliberate Tab keeps inserting a tab rather than
      * triggering a Ctrl+'i' command -- the control byte and the key are
      * indistinguishable at this layer. Unmatched control bytes fall
