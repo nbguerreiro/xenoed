@@ -63,6 +63,20 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   same way it uses `editor_get_selection_text`/`editor_paste_text`.
   `editor_request_user_command()` refuses WORD commands from visual mode and
   from lines with no word, mirroring SELECTION's "needs a selection" guard.
+  `CMD_INPUT_INSERT` (the insert-mode family member, sample: the `insert_date`
+  Ctrl+d entry) is the sibling pair to `CMD_INPUT_NONE`'s "no input": it also
+  passes no stdin to the script, but on exit 0 its stdout is inserted at the
+  cursor as one undo step by `editor_insert_at_cursor()` (main.c strips the
+  trailing newline(s) first so `date`/`echo` land inline). Inside the editor,
+  insert-mode dispatch is `editor_dispatch_insert_command()`, the sibling of
+  `editor_dispatch_command()`: it only fires Ctrl-bound commands whose input
+  kind is INSERT or NONE (plain keys are text, the leader key is the spacebar,
+  so neither is dispatchable mid-typing; `'\t'`/Ctrl+I is excluded to keep Tab
+  as text). `editor_request_user_command()` matches WORD's mode guard by
+  refusing everything except INSERT/NONE from MODE_INSERT. `editor.c`'s
+  `editor_insert_text()` takes a `force_charwise` flag (set by
+  `editor_insert_at_cursor`) that disables the trailing-'\n' linewise heuristic
+  so inserted command output splits lines exactly as typing would.
 - Every external command (and the `!` filter) inherits the editor's X window
   id as `$WINDOWID` — `main.c` `setenv`s it once after `XCreateSimpleWindow`,
   before the event loop, so all `fork`/`exec` children get it regardless of

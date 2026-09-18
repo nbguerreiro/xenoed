@@ -568,16 +568,20 @@ static void editor_yank_line(Editor *ed) {
 /* Insert text at the cursor without an undo checkpoint. `insert_at_cursor`
  * forces characterwise paste at cur_col (selection replace / insert mode /
  * P); otherwise normal-mode p pastes after the character under the cursor.
- * `replacing_linewise` + `linewise_replace_at` place linewise text exactly
- * where a just-deleted linewise selection was. */
+ * `force_charwise` disables the trailing-'\n' linewise heuristic outright,
+ * so a CMD_INPUT_INSERT command's output splits lines at every embedded
+ * newline exactly as typing would. `replacing_linewise` +
+ * `linewise_replace_at` place linewise text exactly where a just-deleted
+ * linewise selection was. */
 static void editor_insert_text(Editor *ed, const char *text, size_t len,
                                int insert_at_cursor,
                                int replacing_linewise,
-                               size_t linewise_replace_at) {
+                               size_t linewise_replace_at,
+                               int force_charwise) {
     if (len == 0) return;
     Buffer *b = ed->buf;
     int insert_mode = (ed->mode == MODE_INSERT);
-    int linewise = (text[len - 1] == '\n');
+    int linewise = (text[len - 1] == '\n') && !force_charwise;
 
     if (linewise) {
         size_t line_start = 0;
@@ -662,7 +666,7 @@ void editor_paste_text(Editor *ed, const char *text, size_t len) {
 
     editor_insert_text(ed, text, len,
                        insert_mode || paste_before_requested || replaced_selection,
-                       replacing_linewise, linewise_replace_at);
+                       replacing_linewise, linewise_replace_at, 0);
     paste_before_requested = 0;
 }
 
@@ -683,7 +687,7 @@ int editor_replace_selection_text(Editor *ed, const char *text, size_t len) {
     if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
 
     if (len > 0) {
-        editor_insert_text(ed, text, len, 1, replacing_linewise, linewise_replace_at);
+        editor_insert_text(ed, text, len, 1, replacing_linewise, linewise_replace_at, 0);
     } else {
         ed->buf->dirty = 1;
         editor_clamp_cursor(ed);
@@ -713,6 +717,13 @@ void editor_replace_buffer_text(Editor *ed, const char *text, size_t len) {
     editor_selection_clear(ed);
     if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
     editor_clamp_cursor(ed);
+}
+
+void editor_insert_at_cursor(Editor *ed, const char *text, size_t len) {
+    if (len == 0) return;
+    editor_checkpoint(ed);
+    if (editor_has_selection(ed)) editor_delete_selection(ed);
+    editor_insert_text(ed, text, len, 1, 0, 0, 1);
 }
 
 /* --- :s search-and-replace -----------------------------------------------
@@ -1060,6 +1071,19 @@ static void editor_request_user_command(Editor *ed, int index) {
         }
     }
 
+    /* From insert mode only the input kinds that make sense mid-typing
+     * are allowed: CMD_INPUT_INSERT (stdout lands at the cursor) and
+     * CMD_INPUT_NONE (detached launch). Everything else is a
+     * normal-mode/visual-mode command -- and the Ctrl dispatch path
+     * (editor_dispatch_insert_command) already excludes them before
+     * calling in, so this is a defense for direct callers, not the
+     * normal trigger. */
+    if (ed->mode == MODE_INSERT &&
+        cmd->input != CMD_INPUT_INSERT && cmd->input != CMD_INPUT_NONE) {
+        set_status(ed, "E: %s is a normal-mode command", label);
+        return;
+    }
+
     if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
 
     ed->user_command_index = index;
@@ -1150,6 +1174,29 @@ const char *const *editor_command_names(int *out_count) {
 static int editor_dispatch_command(Editor *ed, XenoedKeyModifier mod, char key) {
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
         if (XENOED_COMMANDS[i].key.mod == mod && XENOED_COMMANDS[i].key.key == key) {
+            editor_request_user_command(ed, i);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Insert-mode counterpart to editor_dispatch_command: only Ctrl bindings,
+ * and only those whose input kind makes sense from mid-typing --
+ * CMD_INPUT_INSERT (stdout lands at the cursor) and CMD_INPUT_NONE
+ * (detached launch). Plain and leader bindings are deliberately NOT
+ * dispatched here: a plain key is the text you're typing, and the leader
+ * key is the spacebar -- neither can double as a command prefix without
+ * swallowing or delaying real input. A Ctrl byte bound to a
+ * normal-mode-only command stays as silent as any other unbound control
+ * byte, rather than flashing an error after a stray Ctrl+keypress. ' '
+ * reaches insert mode as ordinary text; the control-byte namespace is the
+ * one spot with room to spare. */
+static int editor_dispatch_insert_command(Editor *ed, char key) {
+    for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+        const XenoedCommand *cmd = &XENOED_COMMANDS[i];
+        if (cmd->key.mod == XENOED_MOD_CTRL && cmd->key.key == key &&
+            (cmd->input == CMD_INPUT_INSERT || cmd->input == CMD_INPUT_NONE)) {
             editor_request_user_command(ed, i);
             return 1;
         }
@@ -1625,6 +1672,19 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
         ed->paste_requested = 1;
         return;
     }
+
+    /* XENOED_COMMANDS Ctrl bindings fire from insert mode for the input
+     * kinds that make sense mid-typing (CMD_INPUT_INSERT inserts stdout
+     * at the cursor; CMD_INPUT_NONE launches detached). '\t' (Ctrl+I) is
+     * excluded so a deliberate Tab keeps inserting a tab rather than
+     * triggering a Ctrl+'i' command -- the control byte and the key are
+     * indistinguishable at this layer. Unmatched control bytes fall
+     * through to the existing silent drop below. */
+    if (c0 != '\t') {
+        char ctrl_key = ctrl_character_to_key(text, len);
+        if (ctrl_key && editor_dispatch_insert_command(ed, ctrl_key)) return;
+    }
+
     if (c0 < 0x20 && c0 != '\t') return;
     if (c0 == 0x7F) return;
 

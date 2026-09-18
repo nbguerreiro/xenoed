@@ -2188,6 +2188,163 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 98: a Ctrl binding to a CMD_INPUT_INSERT command fires from
+     * insert mode -- and only sets the request flag; main.c does the
+     * subprocess work and calls editor_insert_at_cursor(). The editor
+     * stays in insert mode and the buffer is untouched so far. */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int idx = -1;
+        char key = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_INSERT &&
+                XENOED_COMMANDS[i].key.mod == XENOED_MOD_CTRL) {
+                idx = i;
+                key = XENOED_COMMANDS[i].key.key;
+                break;
+            }
+        }
+        CHECK(idx >= 0);
+        char ctrlkeys[2] = { ctrl_byte_for_key(key), '\0' };
+        CHECK(ctrlkeys[0] != 0);
+        feed(&ed, "ihello<Esc>");
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 0;
+        feed(&ed, ctrlkeys);
+        printf("Test 98 (Ctrl+%c from insert mode requests insert command): requested=%d index=%d mode=%d\n",
+               key, ed.user_command_requested, ed.user_command_index, ed.mode);
+        CHECK(ed.user_command_requested);
+        CHECK(ed.user_command_index == idx);
+        CHECK(ed.mode == MODE_INSERT);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0);
+        /* the picked-up request also works from the ':'-name path */
+        ed.user_command_requested = 0;
+        feed(&ed, "<Esc>");
+        editor_run_command(&ed, XENOED_COMMANDS[idx].name);
+        CHECK(ed.user_command_requested);
+        CHECK(ed.user_command_index == idx);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 99: a Ctrl binding to a normal-mode-only input kind stays
+     * silent in insert mode -- the control byte falls through to the usual
+     * "ignored control character" drop, it must not flash an error or
+     * disturb the buffer (the shipped Ctrl+] sample is CMD_INPUT_WORD). */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        int found_word_ctrl = 0;
+        for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
+            if (XENOED_COMMANDS[i].input == CMD_INPUT_WORD &&
+                XENOED_COMMANDS[i].key.mod == XENOED_MOD_CTRL) {
+                found_word_ctrl = 1;
+                break;
+            }
+        }
+        CHECK(found_word_ctrl);
+        feed(&ed, "ihello<Esc>");
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 5;
+        char ctrlkeys[2] = { 0x1D, '\0' }; /* Ctrl+] -- the shipped WORD sample's key */
+        feed(&ed, ctrlkeys);
+        printf("Test 99 (normal-only Ctrl binding silent in insert mode): requested=%d\n",
+               ed.user_command_requested);
+        CHECK(!ed.user_command_requested);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 100: Tab in insert mode still inserts a tab -- the '\t' byte is
+     * excluded from Ctrl-binding dispatch (it is indistinguishable from
+     * Ctrl+I at this layer), so typing a tab can never trigger a command. */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ia<Esc>");
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 1;
+        feed(&ed, "\t");
+        printf("Test 100 (Tab still inserts a tab): line=\"%s\" requested=%d\n",
+               buffer_line(b, 0)->data, ed.user_command_requested);
+        CHECK(strcmp(buffer_line(b, 0)->data, "a\tb") == 0 ||
+              strcmp(buffer_line(b, 0)->data, "a\t") == 0); /* a<b>a tab after the 'a' */
+        CHECK(!ed.user_command_requested);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 101: editor_insert_at_cursor() inserts inline at the cursor as
+     * one undo step, stays in insert mode, cursor after the inserted text */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 3; /* between the two 'l's */
+        editor_insert_at_cursor(&ed, "XX", 2);
+        printf("Test 101 (insert_at_cursor inline):\n"); dump(b);
+        CHECK(strcmp(buffer_line(b, 0)->data, "helXXlo") == 0);
+        CHECK(ed.mode == MODE_INSERT);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 5); /* right after "XX" */
+        ed.mode = MODE_NORMAL;
+        feed(&ed, "u");
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0); /* one undo step */
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 102: a trailing '\n' in the inserted text behaves exactly like
+     * pressing Enter -- the line splits and the cursor lands on the new
+     * line, col 0; embedded newlines split mid-line. */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "iab<Esc>");
+        ed.mode = MODE_INSERT; ed.cur_line = 0; ed.cur_col = 2; /* at the very end */
+        editor_insert_at_cursor(&ed, "XY\n", 3);
+        printf("Test 102a (trailing newline as typed):\n"); dump(b);
+        CHECK(b->count == 2);
+        CHECK(strcmp(buffer_line(b, 0)->data, "abXY") == 0);
+        CHECK(strcmp(buffer_line(b, 1)->data, "") == 0);
+        CHECK(ed.cur_line == 1 && ed.cur_col == 0);
+
+        Buffer *b2 = buffer_new();
+        buffer_load(b2, NULL);
+        Editor ed2; editor_init(&ed2, b2);
+        feed(&ed2, "iabcf<Esc>");
+        ed2.mode = MODE_INSERT; ed2.cur_line = 0; ed2.cur_col = 2; /* between 'b' and 'c' */
+        editor_insert_at_cursor(&ed2, "1\n2", 3);
+        printf("Test 102b (embedded newline splits):\n"); dump(b2);
+        CHECK(b2->count == 2);
+        CHECK(strcmp(buffer_line(b2, 0)->data, "ab1") == 0);
+        CHECK(strcmp(buffer_line(b2, 1)->data, "2cf") == 0);
+        CHECK(ed2.cur_line == 1 && ed2.cur_col == 1);
+        editor_deinit(&ed2);
+        buffer_free(b2);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 103: empty insert is a no-op that doesn't create an undo step */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ihello<Esc>");
+        size_t undo_before = ed.undo_count;
+        editor_insert_at_cursor(&ed, "", 0);
+        printf("Test 103 (empty insert_at_cursor no-op): undo=%zu mode=%d\n",
+               ed.undo_count, ed.mode);
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello") == 0);
+        CHECK(ed.undo_count == undo_before);
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

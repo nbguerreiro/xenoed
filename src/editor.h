@@ -288,6 +288,18 @@ void editor_run_command(Editor *ed, const char *cmd);
  * command means updating both, by design, not by oversight. */
 const char *const *editor_command_names(int *out_count);
 
+/* Inserts `text` at the cursor exactly as if it had been typed there, as
+ * one undo step: embedded '\n' breaks the line (a trailing '\n' included,
+ * pushing the rest of the line down and leaving the cursor on the new
+ * line), an active selection is replaced first, and the editor stays in
+ * its current mode with the cursor after the inserted text. This is the
+ * insertion half of a CMD_INPUT_INSERT external command -- main.c strips
+ * trailing newlines from the command's stdout before calling it, so most
+ * commands land inline -- but it's a plain editor primitive, usable
+ * anywhere. Unlike editor_paste_text there is no linewise/characterwise
+ * heuristic: the bytes are bytes, the cursor is a boundary. */
+void editor_insert_at_cursor(Editor *ed, const char *text, size_t len);
+
 /* Replaces the ENTIRE buffer with `text` (an external command's stdout,
  * for a CMD_INPUT_BUFFER command) as one undo step. Resets the cursor to
  * (0,0), since the old position may not correspond to anything sensible

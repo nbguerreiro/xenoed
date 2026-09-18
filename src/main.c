@@ -614,6 +614,12 @@ static void run_user_command(Editor *ed, const char *filename) {
             snprintf(ed->status, sizeof(ed->status), "E: no word under cursor");
             return;
         }
+    } else if (cmd->input == CMD_INPUT_INSERT) {
+        /* No stdin: the script is a producer (date, a snippet generator),
+         * not a filter -- its empty stdin is closed and it just writes
+         * stdout, which editor_insert_at_cursor() drops at the cursor. */
+        input_text = NULL;
+        input_len = 0;
     } else {
         if (!editor_get_selection_text(ed, &input_text, &input_len)) {
             snprintf(ed->status, sizeof(ed->status), "E: %s needs a selection", label);
@@ -634,6 +640,14 @@ static void run_user_command(Editor *ed, const char *filename) {
         editor_replace_buffer_text(ed, output, output_len);
     } else if (cmd->input == CMD_INPUT_WORD) {
         editor_replace_word_text(ed, output, output_len);
+    } else if (cmd->input == CMD_INPUT_INSERT) {
+        /* trailing newline(s) are the shell's doing (`date`, `echo`,
+         * `cat` all emit one); drop them so the output sits inline at the
+         * cursor and the command doesn't drag a dangling blank line in */
+        while (output_len > 0 &&
+               (output[output_len - 1] == '\n' || output[output_len - 1] == '\r'))
+            output_len--;
+        editor_insert_at_cursor(ed, output, output_len);
     } else {
         editor_paste_text(ed, output, output_len);
     }

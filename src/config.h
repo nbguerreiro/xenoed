@@ -120,7 +120,24 @@ typedef enum {
      * word (uppercase it, look it up, run a linter on the identifier you
      * just typed). Visual mode refuses it -- the cursor there extends a
      * selection, not a word. */
-    CMD_INPUT_WORD
+    CMD_INPUT_WORD,
+
+    /* The script's stdout is inserted at the current cursor position, as
+     * one undo step, cursor left after it and the editor still in insert
+     * mode -- the natural "run an external command mid-typing" kind (a
+     * snippet generator, `date`, an encoder, a template expansion). No
+     * stdin (closed immediately, like a plain launcher): the script is a
+     * producer, not a filter. Trailing newlines in the output are
+     * stripped, so a command whose every line ends in '\n' -- `date`,
+     * `echo`, `cat` -- inserts inline beneath the cursor instead of
+     * dragging a dangling blank line in; embedded newlines still break
+     * lines exactly as typing would. Triggered from INSERT mode via a
+     * Ctrl+key binding (with CMD_INPUT_NONE, the only kinds that fire
+     * there): plain keys are the text you're typing and the leader key
+     * is the spacebar, so neither can double as a command prefix without
+     * swallowing real input -- the table's warning list already treats
+     * Ctrl+X/C/V as reserved insert-mode keys for the same reason. */
+    CMD_INPUT_INSERT
 } XenoedCommandInput;
 
 typedef struct {
@@ -169,6 +186,11 @@ typedef struct {
  * shadows no built-in), demonstrating the plain-letter binding spelling.
  * The "script" entry shows a Ctrl binding spelled as a punctuation key:
  * Ctrl+] is XENOED_KEY_CTRL(']').
+ * "insert_date" shows a command usable WHILE TYPING: Ctrl+d runs
+ * `date +%F` with no stdin and its stdout lands at the cursor in insert
+ * mode (CMD_INPUT_INSERT) -- the one input kind whose Ctrl binding fires
+ * from insert mode, where plain and leader keys are reserved for the
+ * text you're typing (the leader key is the spacebar itself).
  * "indent.sh" and the commented examples exist as dispatch-mechanism
  * placeholders that fail closed with a status message. Replace and add
  * entries freely; the leader key, the Ctrl key, the plain key and the ':'
@@ -184,7 +206,8 @@ static const XenoedCommand XENOED_COMMANDS[] = {
     { "tag_goto",              "tag_goto.sh",             XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
     { "man",                     "man.sh",             XENOED_KEY_LEADER('k'),   CMD_INPUT_WORD },
 
-    /*man K*/
+   /* { "insert_date",      "date +%F",               XENOED_KEY_CTRL('d'),    CMD_INPUT_INSERT }, */
+    { "script",      "./script.sh",               XENOED_KEY_CTRL('d'),    CMD_INPUT_INSERT },
 
     { NULL, NULL, XENOED_KEY_NONE, CMD_INPUT_NONE } /* sentinel -- must stay last */
 };
