@@ -107,10 +107,37 @@ void editor_clamp_cursor(Editor *ed) {
 
 void editor_ensure_visible(Editor *ed, size_t visible_rows) {
     if (visible_rows == 0) return;
+
+    size_t count = ed->buf->count;
+    size_t max_top = (count > visible_rows) ? count - visible_rows : 0;
+
+    /* Rediscover what moved. A difference in cur_line means the cursor was
+     * moved by navigation (arrows, j/k, page up/down, goto line, search,
+     * undo/redo): recenter it vertically, clamped so top_line stays inside
+     * the buffer. A match means only the viewport moved (scroll_by, via
+     * its own follow_line sync, or nothing at all) -- leave top_line alone.
+     * A mouse click/drag sets no_recenter so its cursor placement -- which
+     * happens where the pointer already is, i.e. in view -- is treated the
+     * same way: don't yank the viewport around to center it. */
+    if (ed->no_recenter) {
+        ed->no_recenter = 0;
+        ed->follow_line = ed->cur_line;
+    } else if (ed->cur_line != ed->follow_line) {
+        ed->follow_line = ed->cur_line;
+        size_t half = visible_rows / 2;
+        size_t top = (ed->cur_line >= half) ? ed->cur_line - half : 0;
+        if (top > max_top) top = max_top;
+        ed->top_line = top;
+    }
+
+    /* Safety net: keep the cursor inside the viewport no matter what
+     * (buffer shrank under it, a scroll pushed top_line past the end,
+     * etc.). Normally a no-op. */
     if (ed->cur_line < ed->top_line) {
         ed->top_line = ed->cur_line;
     } else if (ed->cur_line >= ed->top_line + visible_rows) {
         ed->top_line = ed->cur_line - visible_rows + 1;
+        if (ed->top_line > max_top) ed->top_line = max_top;
     }
 }
 
@@ -131,13 +158,16 @@ void editor_scroll_by(Editor *ed, int delta, size_t visible_rows) {
     }
 
     /* Keep the cursor inside the viewport; otherwise the next redraw's
-     * editor_ensure_visible() would snap top_line back to the cursor. */
+     * editor_ensure_visible() would snap top_line back to the cursor. The
+     * follow_line sync records that ANY cursor move here was a wheel
+     * clamp, not a navigation move, so that redraw won't recenter on it. */
     if (ed->cur_line < ed->top_line) {
         ed->cur_line = ed->top_line;
     } else if (ed->cur_line >= ed->top_line + visible_rows) {
         ed->cur_line = ed->top_line + visible_rows - 1;
         if (count > 0 && ed->cur_line >= count) ed->cur_line = count - 1;
     }
+    ed->follow_line = ed->cur_line;
     editor_clamp_cursor(ed);
 }
 

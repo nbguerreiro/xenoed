@@ -1070,6 +1070,7 @@ int main(int argc, char **argv) {
                         ed.cur_col = c;
                         editor_clamp_cursor(&ed);
                     }
+                    ed.no_recenter = 1; /* cursor went where the pointer is; don't center on it */
                     editor_selection_clear(&ed);
                     mouse_dragging = 1;
                     sync_primary_ownership(dpy, win, &ed, &sel);
@@ -1081,8 +1082,9 @@ int main(int argc, char **argv) {
                     redraw(&rs, &bb, &ed, width, height, focused);
                 } else if (ev.xbutton.button == Button4 || ev.xbutton.button == Button5) {
                     /* Classic X11 mouse wheel: Button4 = up, Button5 = down.
-                     * Works in any mode; cursor is kept in the viewport so
-                     * ensure_visible on the next redraw doesn't undo it. */
+                     * Works in any mode. cursor is kept in the viewport and
+                     * editor_scroll_by syncs follow_line so that the next
+                     * redraw's editor_ensure_visible() won't recenter on it. */
                     int visible_rows = render_visible_rows(&rs, height);
                     int delta = (ev.xbutton.button == Button4)
                         ? -XENOED_SCROLL_LINES : XENOED_SCROLL_LINES;
@@ -1114,6 +1116,7 @@ int main(int argc, char **argv) {
                         ed.cur_line = l;
                         ed.cur_col = c;
                         editor_clamp_cursor(&ed);
+                        ed.no_recenter = 1; /* drag follows the pointer, not a recentering */
                         sync_primary_ownership(dpy, win, &ed, &sel);
                         redraw(&rs, &bb, &ed, width, height, focused);
                     }

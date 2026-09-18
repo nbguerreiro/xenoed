@@ -56,6 +56,18 @@ typedef struct {
 
     size_t top_line;   /* first visible line, for vertical scrolling */
 
+    /* Viewport-follow state. editor_ensure_visible() centers the cursor
+     * vertically whenever cur_line moves, but must NOT recenter when the
+     * viewport itself moved under a stationary cursor (mouse wheel) or
+     * when the mouse placed the cursor where it pointed. follow_line
+     * remembers the cur_line the view last followed: a mismatch means the
+     * cursor moved by navigation (recenter); a match means only top_line
+     * moved (leave it alone). no_recenter is a one-shot flag set by the
+     * mouse handlers so that a click/drag position isn't mistaken for a
+     * navigation move on the next redraw. */
+    size_t follow_line;
+    int no_recenter;
+
     char pending_op;   /* 0, or 'd'/'y'/'m'/'\''/'r' after a lone
                         * 'd'/'y'/'m'/'\''/'r' in normal mode, awaiting the
                         * repeat, the mark letter, or the replacement char */
@@ -182,8 +194,12 @@ void editor_handle_key(Editor *ed, EditorSpecialKey special, const char *text, i
  * rest one past it). Call after any edit that could invalidate cur_col. */
 void editor_clamp_cursor(Editor *ed);
 
-/* Adjust top_line so cur_line stays within a viewport of `visible_rows`
- * lines. Call once per frame before rendering, from the render layer. */
+/* Adjust top_line so cur_line is centered vertically in a viewport of
+ * `visible_rows` lines (clamped at both ends when the buffer is shorter
+ * or the cursor is near the top or bottom edge).  A navigation move
+ * (arrows, page up/down, goto line, search) always triggers centering;
+ * a wheel scroll or mouse placement is left undisturbed.  Call once per
+ * frame before rendering, from the render layer. */
 void editor_ensure_visible(Editor *ed, size_t visible_rows);
 
 /* Scroll the viewport by `delta` lines (negative = up, positive = down),

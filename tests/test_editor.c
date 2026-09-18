@@ -2107,6 +2107,87 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 97: editor_ensure_visible centers the cursor vertically when it
+     * moves by navigation, clamped at both buffer edges */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        for (int i = 0; i < 50; i++) {
+            char line[16];
+            int n = snprintf(line, sizeof(line), "L%d", i);
+            if (i == 0) line_set(buffer_line(b, 0), line, (size_t)n);
+            else buffer_insert_line(b, (size_t)i, line, (size_t)n);
+        }
+        ed.cur_line = 0; ed.cur_col = 0; ed.top_line = 0;
+
+        /* Move the cursor to line 20 with two Page Down jumps (+10 each) */
+        editor_handle_key(&ed, EKEY_NEXT, NULL, 0);
+        editor_handle_key(&ed, EKEY_NEXT, NULL, 0);
+        printf("Test 97a (PgDn x2 from top): line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 20);
+        /* Still at top_line 0; a redraw recenters line 20 in a 10-row viewport */
+        ed.top_line = 0;
+        ed.follow_line = 0;
+        printf("Test 97b (line 20 of 50, viewport 10): ");
+        editor_ensure_visible(&ed, 10);
+        printf("line=%zu top=%zu (want 15)\n", ed.cur_line, ed.top_line);
+        CHECK(ed.cur_line == 20 && ed.top_line == 15);
+
+        /* Near the top: clamps so no blank space, cursor can't be centered */
+        ed.cur_line = 1; ed.follow_line = 0; ed.top_line = 0;
+        editor_ensure_visible(&ed, 10);
+        printf("Test 97c (line 1): top=%zu (want 0)\n", ed.top_line);
+        CHECK(ed.top_line == 0);
+
+        /* Near the top clamp: line 5 of 50, viewport 10 -> top=0 (cur row 5) */
+        ed.cur_line = 5; ed.follow_line = 0; ed.top_line = 0;
+        editor_ensure_visible(&ed, 10);
+        printf("Test 97d (line 5): top=%zu (want 0)\n", ed.top_line);
+        CHECK(ed.top_line == 0);
+
+        /* Centered in the middle of the buffer */
+        ed.cur_line = 45; ed.follow_line = 0; ed.top_line = 40; /* nearly at EOF */
+        editor_ensure_visible(&ed, 10);
+        printf("Test 97e (line 45): top=%zu (want 40)\n", ed.top_line);
+        CHECK(ed.top_line == 40);
+
+        /* At EOF, clamped to max top (50-10=40), cursor at row 9 */
+        ed.cur_line = 49; ed.follow_line = 40; ed.top_line = 40;
+        editor_ensure_visible(&ed, 10);
+        printf("Test 97f (last line): top=%zu (want 40)\n", ed.top_line);
+        CHECK(ed.top_line == 40);
+
+        /* Wheel scroll (scroll_by) followed by redraw must NOT recenter:
+         * cursor moves down 5 via scroll, viewport 10 */
+        ed.cur_line = 0; ed.cur_col = 0; ed.top_line = 0;
+        editor_scroll_by(&ed, 5, 10);   /* top_line=5, cur_line clamped to 5 */
+        printf("Test 97g (wheel down): top=%zu cur=%zu (want 5,5)\n",
+               ed.top_line, ed.cur_line);
+        CHECK(ed.top_line == 5 && ed.cur_line == 5);
+        editor_ensure_visible(&ed, 10); /* redraw: must leave top_line alone */
+        printf("Test 97h (after redraw): top=%zu (want 5)\n", ed.top_line);
+        CHECK(ed.top_line == 5);
+
+        /* Mouse placement (no_recenter) must not recenter either */
+        ed.cur_line = 8; ed.top_line = 5; ed.follow_line = 5;
+        ed.no_recenter = 1;
+        editor_ensure_visible(&ed, 10);
+        printf("Test 97i (mouse placed cursor): top=%zu (want 5)\n", ed.top_line);
+        CHECK(ed.top_line == 5);
+
+        /* And the no_recenter is one-shot: a navigation move on the next
+         * redraw recenters again */
+        ed.follow_line = 8;
+        ed.cur_line = 15;
+        editor_ensure_visible(&ed, 10);
+        printf("Test 97j (nav after mouse): top=%zu (want 10)\n", ed.top_line);
+        CHECK(ed.top_line == 10);
+
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;
