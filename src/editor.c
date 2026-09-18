@@ -1049,6 +1049,25 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
          * just 's' below still gets a chance). */
         if (run_substitute(ed, cmd) > 0) return;
     } else {
+        /* A bare number is a goto-line command, vim-style (`:42` jumps to
+         * line 42, 1-based; 0 is an error since lines are 1-based; leading
+         * zeros like `:007` are fine). Leading whitespace was already
+         * skipped; trailing whitespace is tolerated like everywhere else. */
+        const char *p = cmd;
+        while (*p >= '0' && *p <= '9') p++;
+        while (*p == ' ') p++;   /* tolerate trailing whitespace */
+        if (p != cmd && *p == '\0') {
+            long target = strtol(cmd, NULL, 10);
+            if (target >= 1) {
+                ed->cur_line = (size_t)(target - 1);
+                if (ed->cur_line >= b->count) ed->cur_line = b->count - 1;
+                ed->cur_col = 0;
+                editor_clamp_cursor(ed);
+                return;
+            }
+            set_status(ed, "E: unknown command: %s", cmd);
+            return;
+        }
         int matched = -1;
         for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
             if (XENOED_COMMANDS[i].name && strcmp(cmd, XENOED_COMMANDS[i].name) == 0) {
@@ -1132,7 +1151,11 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
     char ctrl_key = ctrl_character_to_key(text, len);
     if (ctrl_key) {
         ed->pending_op = 0;
-        editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_key);
+        if (!editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_key)) {
+            /* Ctrl+G with no XENOED_COMMANDS binding = goto line: main.c
+             * opens a bare dmenu for a line number. */
+            if (ctrl_key == 'g') ed->goto_line_requested = 1;
+        }
         return;
     }
 

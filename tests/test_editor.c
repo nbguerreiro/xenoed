@@ -1961,6 +1961,62 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 93: a bare-number ':' command jumps to that 1-based line
+     * (`:42` → line 42); out-of-range clamps to the last line; a number
+     * that isn't pure (or <= 0) is treated as unknown */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        /* five lines: "a" "b" "c" "d" "e" */
+        feed(&ed, "ia<CR>b<CR>c<CR>d<CR>e<Esc>");
+        CHECK(b->count == 5);
+
+        editor_run_command(&ed, "3");
+        printf("Test 93a (\":3\" jumps to line 3): cur_line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 2 && ed.cur_col == 0);
+
+        editor_run_command(&ed, "999");
+        printf("Test 93b (\":999\" clamps to last line): cur_line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 4 && ed.cur_col == 0);
+
+        editor_run_command(&ed, " 2 ");
+        printf("Test 93c (whitespace-padded \": 2 \" jumps to line 2): cur_line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 1 && ed.cur_col == 0);
+
+        editor_run_command(&ed, "0");
+        printf("Test 93d (\":0\" is an unknown-command error): status=\"%s\"\n", ed.status);
+        CHECK(strstr(ed.status, "unknown command") != NULL);
+
+        editor_run_command(&ed, "12x");
+        printf("Test 93e (\":12x\" is an unknown-command error): status=\"%s\"\n", ed.status);
+        CHECK(strstr(ed.status, "unknown command") != NULL);
+
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 94: Ctrl+G in normal mode requests a goto-line prompt (a flag
+     * main.c turns into a dmenu); 'g' as a plain letter is unaffected */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        char ctrlkeys[2] = { ctrl_byte_for_key('g'), '\0' };
+        feed(&ed, ctrlkeys);
+        printf("Test 94a (Ctrl+G requests goto-line): requested=%d\n",
+               ed.goto_line_requested);
+        CHECK(ed.goto_line_requested);
+
+        /* the flag is consumed by main.c's handler, so it never persists */
+        ed.goto_line_requested = 0;
+        feed(&ed, "g"); /* pending_op 'g', awaiting the second g */
+        CHECK(!ed.goto_line_requested);
+        CHECK(ed.pending_op == 'g');
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

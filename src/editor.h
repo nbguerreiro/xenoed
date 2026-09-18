@@ -79,6 +79,13 @@ typedef struct {
      * editor_run_command(). Same request-flag shape as search/paste. */
     int command_menu_requested;
 
+    /* Ctrl+G: main.c runs a bare "goto line:" dmenu (no items), parses the
+     * typed number, and jumps the cursor to that line -- the same jump
+     * `:42` performs via editor_run_command(), shared through that path so
+     * the two entry points can't drift apart. Left to main.c for the same
+     * reason as search: this file has no OS access to spawn dmenu. */
+    int goto_line_requested;
+
     /* '!' filter: main.c shows an embedded dmenu for a shell command, runs
      * it with either the whole buffer or the current selection on stdin,
      * and replaces that span with stdout on exit 0. Selection is kept

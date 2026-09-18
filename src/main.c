@@ -1187,6 +1187,19 @@ int main(int argc, char **argv) {
                     show_command_menu(dpy, win, &ed);
                     if (ed.want_quit) { running = 0; break; }
                 }
+                if (ed.goto_line_requested) {
+                    ed.goto_line_requested = 0;
+                    /* Bare prompt, no items: dmenu returns whatever line
+                     * number was typed (or NULL on Escape). Feeding it back
+                     * to editor_run_command() keeps this path in lockstep
+                     * with the `:42` spelling, including clamp + status
+                     * on a bad number. */
+                    char *line_str = run_dmenu(dpy, win, NULL, 0, "goto line:");
+                    if (line_str) {
+                        editor_run_command(&ed, line_str);
+                        free(line_str);
+                    }
+                }
                 if (ed.external_filter_requested) {
                     ed.external_filter_requested = 0;
                     run_external_filter(dpy, win, &ed);

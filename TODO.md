@@ -35,7 +35,7 @@
 - [x] 24. commands: r, D
 - [x] 25. on visual mode, while selecting text, I should be able to use gg and G.
 - [x] 26. should be able to select with mouse while on normal mode
-- [ ] 27. goto line
+- [x] 27. goto line
 
 
 
