@@ -11,7 +11,7 @@ L := $(shell pkg-config --libs $(PKGS))
 CFLAGS ?= $(shell dpkg-buildflags --get CFLAGS)
 LDFLAGS ?= $(shell dpkg-buildflags --get LDFLAGS)
 
-CFLAGS := -D_FORTIFY_SOURCE=3 -fstack-protector-all
+CFLAGS += -D_FORTIFY_SOURCE=3 -fstack-protector-all
 CFLAGS += $(C) $(L)
 CFLAGS += -DDEBUG=0
 

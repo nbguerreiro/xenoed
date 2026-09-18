@@ -224,10 +224,10 @@ static const XenoedCommand XENOED_COMMANDS[] = {
     { "format_table",        "column -t -s '|' -o '|'", XENOED_KEY_NONE,   CMD_INPUT_SELECTION },
     { "tag_goto",              "tag_goto.sh",             XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
     { "man",                     "man.sh",             XENOED_KEY_LEADER('k'),   CMD_INPUT_WORD },
+    { "escolha",                "escolha.sh",             XENOED_KEY_CTRL('o'),   CMD_INPUT_WORD },
 
    /* { "insert_date",      "date +%F",               XENOED_KEY_CTRL('d'),    CMD_INPUT_INSERT }, */
-    { "script",      "./script.sh",               XENOED_KEY_CTRL('d'),    CMD_INPUT_INSERT },
-    { "complete_word", "./script.sh",     XENOED_KEY_CTRL('n'),    CMD_INPUT_INSERT_WORD },
+    /* { "complete_word", "./script.sh",     XENOED_KEY_CTRL('n'),    CMD_INPUT_INSERT_WORD }, */
 
     { NULL, NULL, XENOED_KEY_NONE, CMD_INPUT_NONE } /* sentinel -- must stay last */
 };
