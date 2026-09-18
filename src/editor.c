@@ -263,6 +263,25 @@ static void move_vert(Editor *ed, int delta) {
     editor_clamp_cursor(ed);
 }
 
+/* Jump `delta` lines (negative = up), clamping at the buffer edges; the
+ * column is preserved the same way as move_vert. Used by Page Down/Up
+ * (EKEY_NEXT/EKEY_PRIOR). */
+static void jump_lines(Editor *ed, int delta) {
+    size_t target;
+    if (delta < 0) {
+        target = (ed->cur_line > (size_t)(-delta)) ? ed->cur_line - (size_t)(-delta) : 0;
+    } else {
+        target = ed->cur_line + (size_t)delta;
+        if (target >= ed->buf->count) target = ed->buf->count - 1;
+    }
+    const Line *l = buffer_line(ed->buf, ed->cur_line);
+    size_t cp = utf8_count(l->data, ed->cur_col);
+    ed->cur_line = target;
+    const Line *nl = buffer_line(ed->buf, ed->cur_line);
+    ed->cur_col = utf8_offset_for_count(nl->data, nl->len, cp);
+    editor_clamp_cursor(ed);
+}
+
 static void set_status(Editor *ed, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -1126,6 +1145,8 @@ static char ctrl_character_to_key(const char *text, int len) {
 
 static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text, int len) {
     if (special == EKEY_REDO)  { editor_redo(ed); return; }
+    if (special == EKEY_NEXT)  { jump_lines(ed,  XENOED_PAGE_JUMP_LINES); return; }
+    if (special == EKEY_PRIOR) { jump_lines(ed, -XENOED_PAGE_JUMP_LINES); return; }
     if (special == EKEY_UP)    { move_vert(ed, -1); return; }
     if (special == EKEY_DOWN)  { move_vert(ed, +1); return; }
     if (special == EKEY_LEFT)  { move_left(ed); return; }
@@ -1347,6 +1368,8 @@ static void handle_normal(Editor *ed, EditorSpecialKey special, const char *text
 }
 
 static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text, int len) {
+    if (special == EKEY_NEXT)  { jump_lines(ed,  XENOED_PAGE_JUMP_LINES); return; }
+    if (special == EKEY_PRIOR) { jump_lines(ed, -XENOED_PAGE_JUMP_LINES); return; }
     if (special == EKEY_UP)    { move_vert(ed, -1); return; }
     if (special == EKEY_DOWN)  { move_vert(ed, +1); return; }
     if (special == EKEY_LEFT)  { move_left(ed); return; }
@@ -1487,6 +1510,14 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
         case EKEY_UP:
             editor_selection_clear(ed);
             move_vert(ed, -1);
+            return;
+        case EKEY_NEXT:
+            editor_selection_clear(ed);
+            jump_lines(ed, XENOED_PAGE_JUMP_LINES);
+            return;
+        case EKEY_PRIOR:
+            editor_selection_clear(ed);
+            jump_lines(ed, -XENOED_PAGE_JUMP_LINES);
             return;
         case EKEY_DOWN:
             editor_selection_clear(ed);

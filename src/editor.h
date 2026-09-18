@@ -28,6 +28,8 @@ typedef enum {
     EKEY_SHIFT_RIGHT,
     EKEY_SHIFT_UP,
     EKEY_SHIFT_DOWN,
+    EKEY_NEXT,  /* Page Down: jump +XENOED_PAGE_JUMP_LINES lines */
+    EKEY_PRIOR, /* Page Up:   jump -XENOED_PAGE_JUMP_LINES lines */
     EKEY_REDO /* Ctrl+R; 'u' itself needs no entry since it's plain text */
 } EditorSpecialKey;
 

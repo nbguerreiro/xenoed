@@ -914,6 +914,8 @@ static EditorSpecialKey classify_keysym(KeySym ks, unsigned int state) {
         case XK_Right:     return shift ? EKEY_SHIFT_RIGHT : EKEY_RIGHT;
         case XK_Up:        return shift ? EKEY_SHIFT_UP    : EKEY_UP;
         case XK_Down:      return shift ? EKEY_SHIFT_DOWN  : EKEY_DOWN;
+        case XK_Next:      return EKEY_NEXT;   /* Page Down */
+        case XK_Prior:     return EKEY_PRIOR;  /* Page Up */
         case XK_r:
         case XK_R:         return ctrl ? EKEY_REDO : EKEY_NONE;
         default:           return EKEY_NONE;

@@ -2053,6 +2053,60 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 96: Page Down/Up (EKEY_NEXT/EKEY_PRIOR) jump +/- 10 lines,
+     * clamped at the buffer edges, preserving the column */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        /* 25 lines: "ln00" .. "ln24" */
+        char line[16];
+        feed(&ed, "i");
+        for (int i = 0; i < 25; i++) {
+            if (i > 0) feed(&ed, "<CR>");
+            snprintf(line, sizeof(line), "ln%02d", i);
+            feed(&ed, line);
+        }
+        feed(&ed, "<Esc>");
+        CHECK(b->count == 25);
+
+        ed.cur_line = 0; ed.cur_col = 0;
+        editor_handle_key(&ed, EKEY_NEXT, NULL, 0);
+        printf("Test 96a (Page Down from line 0): line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == XENOED_PAGE_JUMP_LINES && ed.cur_col == 0);
+
+        editor_handle_key(&ed, EKEY_NEXT, NULL, 0);
+        printf("Test 96b (Page Down again): line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 2 * XENOED_PAGE_JUMP_LINES && ed.cur_col == 0);
+
+        /* jump off the end clamps to the last line */
+        editor_handle_key(&ed, EKEY_NEXT, NULL, 0);
+        printf("Test 96c (Page Down past end clamps): line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 24 && ed.cur_col == 0);
+
+        editor_handle_key(&ed, EKEY_PRIOR, NULL, 0);
+        printf("Test 96d (Page Up): line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 14);
+
+        ed.cur_line = 0; ed.cur_col = 0;
+        editor_handle_key(&ed, EKEY_PRIOR, NULL, 0);
+        printf("Test 96e (Page Up past start clamps): line=%zu\n", ed.cur_line);
+        CHECK(ed.cur_line == 0);
+
+        /* column is preserved like move_vert, not reset to 0 */
+        ed.cur_line = 0;
+        ed.cur_col = 2; /* on '0' of "ln00" */
+        editor_handle_key(&ed, EKEY_NEXT, NULL, 0);
+        printf("Test 96f (Page Down preserves column): line=%zu col=%zu\n",
+               ed.cur_line, ed.cur_col);
+        CHECK(ed.cur_line == XENOED_PAGE_JUMP_LINES);
+        CHECK(strcmp(buffer_line(b, ed.cur_line)->data, "ln10") == 0);
+        CHECK(ed.cur_col == 2);
+
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

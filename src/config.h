@@ -36,6 +36,14 @@
 #define XENOED_SCROLL_LINES 3
 #endif
 
+/* Lines jumped per Page Down/Page Up key (X11 Next/Prior). Override at
+ * compile time if desired, for example:
+ *   make EXTRA_CFLAGS='-DXENOED_PAGE_JUMP_LINES=25'
+ */
+#ifndef XENOED_PAGE_JUMP_LINES
+#define XENOED_PAGE_JUMP_LINES 10
+#endif
+
 /* --- External commands -------------------------------------------------
  *
  * A compile-time table of external scripts, each optionally reachable from
