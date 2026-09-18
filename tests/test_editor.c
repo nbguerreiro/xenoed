@@ -2017,6 +2017,42 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 95: Esc from insert mode at the start of a line must NOT wrap
+     * to the end of the previous line (vim leaves the cursor on the line
+     * you were editing). */
+    {
+        Buffer *b = buffer_new();
+        buffer_load(b, NULL);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ialpha<CR>beta<Esc>");
+        /* cursor is at col 5 (just typed "beta"), Esc steps back to col 4 */
+        CHECK(ed.mode == MODE_NORMAL);
+        CHECK(ed.cur_line == 1 && ed.cur_col == 3);
+        printf("Test 95a (Esc mid-line steps back): line=%zu col=%zu\n",
+               ed.cur_line, ed.cur_col);
+
+        /* move to start of line 1 and insert nothing, then Esc: must stay on
+         * line 1, not jump to end of line 0 */
+        ed.cur_line = 1;
+        ed.cur_col = 0;
+        feed(&ed, "i<Esc>");
+        printf("Test 95b (Esc at line start stays on the line): line=%zu col=%zu\n",
+               ed.cur_line, ed.cur_col);
+        CHECK(ed.mode == MODE_NORMAL);
+        CHECK(ed.cur_line == 1 && ed.cur_col == 0);
+
+        /* same at the very first line of the buffer */
+        ed.cur_line = 0;
+        ed.cur_col = 0;
+        feed(&ed, "i<Esc>");
+        printf("Test 95c (Esc at first-line start stays put): line=%zu col=%zu\n",
+               ed.cur_line, ed.cur_col);
+        CHECK(ed.cur_line == 0 && ed.cur_col == 0);
+
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
     if (failures == 0) {
         printf("\nAll tests passed.\n");
         return 0;

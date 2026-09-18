@@ -1611,7 +1611,15 @@ void editor_handle_key(Editor *ed, EditorSpecialKey special, const char *text, i
     if (special == EKEY_ESCAPE) {
         if (ed->mode == MODE_INSERT) {
             ed->mode = MODE_NORMAL;
-            move_left(ed);
+            /* Leaving insert mode steps the cursor one UTF-8 boundary left
+             * -- the insert cursor rests one position past the character,
+             * so normal mode should sit ON the last typed character -- but
+             * unlike a plain 'h'/Left motion, Esc must NOT wrap to the end
+             * of the previous line when the cursor is at a line start. */
+            if (ed->cur_col > 0) {
+                const Line *l = buffer_line(ed->buf, ed->cur_line);
+                ed->cur_col = utf8_prev_boundary(l->data, ed->cur_col);
+            }
             editor_clamp_cursor(ed);
         } else if (ed->mode == MODE_SEARCH) {
             ed->mode = MODE_NORMAL;
