@@ -1059,7 +1059,8 @@ int main(int argc, char **argv) {
                 break;
 
             case ButtonPress:
-                if (ev.xbutton.button == Button1 && ed.mode == MODE_INSERT) {
+                if (ev.xbutton.button == Button1 &&
+                    (ed.mode == MODE_INSERT || ed.mode == MODE_NORMAL)) {
                     size_t l, c;
                     if (render_xy_to_pos(&rs, bb.surface, &ed, ev.xbutton.x, ev.xbutton.y,
                                           width, height, &l, &c)) {
@@ -1090,11 +1091,24 @@ int main(int argc, char **argv) {
                 break;
 
             case MotionNotify:
-                if (mouse_dragging && ed.mode == MODE_INSERT) {
+                if (mouse_dragging && (ed.mode == MODE_INSERT || ed.mode == MODE_NORMAL ||
+                                       ed.mode == MODE_VISUAL)) {
                     size_t l, c;
                     if (render_xy_to_pos(&rs, bb.surface, &ed, ev.xmotion.x, ev.xmotion.y,
                                           width, height, &l, &c)) {
-                        if (!ed.sel_active) editor_selection_start(&ed);
+                        if (!ed.sel_active) {
+                            editor_selection_start(&ed);
+                            if (ed.mode == MODE_NORMAL) {
+                                /* Dragging in normal mode enters visual mode
+                                 * with an inclusive selection, so the char
+                                 * under the final cursor is included and the
+                                 * usual visual keys (y/d/x/p, '!', ':') act on
+                                 * what was selected with the mouse. */
+                                ed.sel_inclusive = 1;
+                                ed.sel_linewise = 0;
+                                ed.mode = MODE_VISUAL;
+                            }
+                        }
                         ed.cur_line = l;
                         ed.cur_col = c;
                         editor_clamp_cursor(&ed);

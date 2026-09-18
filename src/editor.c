@@ -48,7 +48,7 @@ void editor_init(Editor *ed, Buffer *buf) {
      * plain would swallow the leader namespace entirely, so that's listed
      * as a built-in too. */
     const char normal_builtins[] = "hjl k0$GgiaAIoOrDxdypPuvV  :!/nN'm";
-    const char visual_builtins[] = "hjl k0$ydxpvV:!";
+    const char visual_builtins[] = "hjl k0$GgydxpvV:!";
     const char insert_ctrl[] = "xcv";
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
         const XenoedKey *k = &XENOED_COMMANDS[i].key;
@@ -1341,7 +1341,19 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
 
     char ctrl_key = ctrl_character_to_key(text, len);
     if (ctrl_key) {
+        ed->pending_op = 0;
         editor_dispatch_command(ed, XENOED_MOD_CTRL, ctrl_key);
+        return;
+    }
+
+    if (ed->pending_op) {
+        char op = ed->pending_op;
+        ed->pending_op = 0;
+        if (c == op && op == 'g') {
+            ed->cur_line = 0;
+            ed->cur_col = 0;
+            editor_clamp_cursor(ed);
+        }
         return;
     }
 
@@ -1358,6 +1370,11 @@ static void handle_visual(Editor *ed, EditorSpecialKey special, const char *text
             ed->cur_col = (l->len == 0) ? 0 : utf8_prev_boundary(l->data, l->len);
             break;
         }
+        case 'G':
+            ed->cur_line = (ed->buf->count > 0) ? ed->buf->count - 1 : 0;
+            editor_clamp_cursor(ed);
+            break;
+        case 'g': ed->pending_op = 'g'; break;
         case 'y': {
             char *text_out = NULL;
             size_t tlen = 0;
