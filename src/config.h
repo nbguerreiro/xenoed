@@ -28,6 +28,15 @@
 #define XENOED_LINE_SPACING 1.50
 #endif
 
+/* Empty pixels left above the first text row so the first line doesn't sit
+ * flush against the window's top edge. Matches the left padding's feel.
+ * Override at compile time if desired, for example:
+ *   make EXTRA_CFLAGS='-DXENOED_TOP_MARGIN=12'
+ */
+#ifndef XENOED_TOP_MARGIN
+#define XENOED_TOP_MARGIN 6
+#endif
+
 /* Lines moved per mouse-wheel click (X11 Button4/Button5). Override at
  * compile time if desired, for example:
  *   make EXTRA_CFLAGS='-DXENOED_SCROLL_LINES=5'

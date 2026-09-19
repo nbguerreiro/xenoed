@@ -10,6 +10,7 @@ typedef struct {
     int row_height;   /* fixed vertical rhythm, in pixels (from font metrics) */
     int ascent;       /* baseline offset within a row, in pixels */
     int padding;      /* left text padding / gutter, in pixels */
+    int top_margin;   /* vertical gutter above the first text row, in pixels */
 } RenderState;
 
 /* Initializes metrics (row_height/ascent) by measuring `font_desc` against

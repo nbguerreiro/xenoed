@@ -38,6 +38,7 @@
 void render_init(RenderState *rs, PangoFontDescription *font_desc) {
     rs->font_desc = font_desc;
     rs->padding = 6;
+    rs->top_margin = XENOED_TOP_MARGIN;
 
     cairo_surface_t *tmp = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
     cairo_t *cr = cairo_create(tmp);
@@ -61,7 +62,7 @@ void render_init(RenderState *rs, PangoFontDescription *font_desc) {
 }
 
 int render_visible_rows(const RenderState *rs, int height) {
-    int usable = height - rs->row_height;
+    int usable = height - rs->row_height - rs->top_margin;
     if (usable < 0) usable = 0;
     int rows = usable / rs->row_height;
     return rows < 1 ? 1 : rows;
@@ -134,7 +135,7 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         if (line_idx >= buf->count) break;
 
         Line *l = buffer_line(buf, line_idx);
-        int row_y = row * rs->row_height;
+        int row_y = rs->top_margin + row * rs->row_height;
 
         PangoLayout *layout = pango_cairo_create_layout(cr);
         pango_layout_set_font_description(layout, rs->font_desc);
@@ -160,7 +161,7 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         g_object_unref(layout);
     }
 
-    int status_y = visible_rows * rs->row_height;
+    int status_y = rs->top_margin + visible_rows * rs->row_height;
 
     PangoFontDescription *bar_font_desc = pango_font_description_from_string(XENOED_FONT_BAR);
 
@@ -220,10 +221,10 @@ int render_xy_to_pos(RenderState *rs, cairo_surface_t *surface, Editor *ed,
                       size_t *out_line, size_t *out_col) {
     (void)width;
     int visible_rows = render_visible_rows(rs, height);
-    int status_y = visible_rows * rs->row_height;
+    int status_y = rs->top_margin + visible_rows * rs->row_height;
     if (y >= status_y) return 0;
 
-    int row = y / rs->row_height;
+    int row = (y - rs->top_margin) / rs->row_height;
     if (row < 0) row = 0;
     if (row >= visible_rows) row = visible_rows - 1;
 

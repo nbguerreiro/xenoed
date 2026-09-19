@@ -36,6 +36,10 @@
 - [x] 25. on visual mode, while selecting text, I should be able to use gg and G.
 - [x] 26. should be able to select with mouse while on normal mode
 - [x] 27. goto line
+- [x] 28. small margin at top
+- [ ] 29. the status bar should indicate if file was modified in-editor, and if it was modified on disk. 
+- [ ] 30. Command to reload from disk.
+- [ ] 31. in the status bar, filenames like "/home/fx/..." can be shortened to "~/..."
 
 
 
