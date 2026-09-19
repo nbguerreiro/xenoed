@@ -4,6 +4,7 @@
 #include <pango/pangocairo.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* Light "sepia paper" theme. Values are 0..1 for cairo_set_source_rgb(a). */
 
@@ -174,7 +175,32 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
     const int name_x = rs->padding;
     const int name_width = line_x - section_gap - name_x;
 
-    const char *fname = buf->filename ? buf->filename : "[No Name]";
+    /* todo #32: an absolute filename under the user's home directory reads
+     * as ~/... in the status bar instead of /home/user/..., the way shells
+     * spell it. Returns buf when shortened, otherwise the original path.
+     * No shortening when HOME is unset, is "/" (walking every path down
+     * to a bare prefix is useless), or when the path isn't actually inside
+     * the home tree (plain names like "notes.txt" and foreign trees are
+     * left alone). */
+    char short_name[512];
+    const char *fname;
+    if (buf->filename) {
+        const char *home = getenv("HOME");
+        if (home && *home && home[1] != '\0') {
+            size_t hl = strlen(home);
+            if (strncmp(buf->filename, home, hl) == 0 &&
+                (buf->filename[hl] == '\0' || buf->filename[hl] == '/')) {
+                snprintf(short_name, sizeof(short_name), "~%s", buf->filename + hl);
+                fname = short_name;
+            } else {
+                fname = buf->filename;
+            }
+        } else {
+            fname = buf->filename;
+        }
+    } else {
+        fname = "[No Name]";
+    }
     char line_text[64];
     char col_text[32];
     snprintf(line_text, sizeof(line_text), "%zu/%zu", ed->cur_line + 1, buf->count);
@@ -184,8 +210,9 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
     snprintf(col_text, sizeof(col_text), "%zu", col);
 
     /* Modified-in-editor shows vim-style as [+]; a file edited (or created/
-     * deleted) behind our back since the last load/save shows as [!]. */
-    char file_label[512];
+     * deleted) behind our back since the last load/save shows as [!].
+     * Sized for worst case (512-byte shortened name + both suffixes). */
+    char file_label[1024];
     snprintf(file_label, sizeof(file_label), "%s%s%s",
              fname,
              buf->dirty ? " [+]" : "",

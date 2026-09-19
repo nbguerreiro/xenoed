@@ -210,6 +210,10 @@ to **Overwrite** the on-disk version anyway or **Reload from disk** to keep
 the external edit and discard your in-editor changes; Escape cancels and
 leaves the buffer unsaved.
 
+The status bar's filename is shortened the way shells do: a file under
+`$HOME` shows as `~/...` instead of the full `/home/user/...` path (no
+shortening for `[No Name]`, files outside `$HOME`, or a `$HOME` of `/`).
+
 ### Search and replace (`:s`)
 
 `:s/pattern/repl/` finds `pattern` (POSIX extended regex, case-insensitive)
