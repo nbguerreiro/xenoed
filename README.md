@@ -35,14 +35,22 @@ with `:w <path>`). An out-of-range line number is clamped to the last line
 rather than treated as an error; an invalid (non-numeric) one is reported
 to stderr and ignored, opening at line 1.
 
-The font is deliberately compile-time only, not a runtime argument — no
-config file to parse, consistent with the rest of the project. It defaults
-to `"Sans 12"`; override it at build time instead of editing source:
+The font family is deliberately compile-time only, not a runtime argument —
+no config file to parse, consistent with the rest of the project. It
+defaults to `"Sans 12"`; override it at build time instead of editing
+source:
 
 ```
 make EXTRA_CFLAGS='-DXENOED_FONT="Georgia 14"'
 make EXTRA_CFLAGS='-DXENOED_FONT="Inter Variable @wght=650,opsz=18"'   # variable font axes
 ```
+
+The font can also be zoomed at runtime without recompiling, in any mode:
+`Ctrl+=` / `Ctrl+Shift+=` / keypad `+` zoom in, `Ctrl+-` / keypad `-` zoom
+out, and `Ctrl`+mouse-wheel zooms the same way. Each step is
+`XENOED_ZOOM_STEP` points (or pixels for an absolute-size font, default 2),
+clamped to the `XENOED_ZOOM_MIN`..`XENOED_ZOOM_MAX` range; the window stays
+put and more/fewer lines fit as the row height changes.
 
 ## Keybindings
 
@@ -121,7 +129,8 @@ normal-mode equivalent):
   moves the cursor. The mouse wheel scrolls the viewport by
   `XENOED_SCROLL_LINES` lines (default 3; override at compile time), in
   any mode; the cursor stays inside the visible area so the next redraw
-  doesn't snap the view back.
+  doesn't snap the view back. Holding `Ctrl` turns the wheel into font
+  zoom (see the font section above).
 - With an active selection, typing replaces it; `Backspace` deletes it
   (without also deleting an extra character); `Enter` replaces it with a
   line break. Selections spanning multiple lines are supported.

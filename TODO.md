@@ -41,6 +41,9 @@
 - [x] 30. Command to reload from disk.
 - [x] 31. if trying to save a file modified on disk, there should be a warning asking if overwrite or reload from disk.
 - [x] 32. in the status bar, filenames like "/home/fx/..." can be shortened to "~/..."
-- [ ] 33. repeat tests fail: tests/test_repeat.c expects "." to replay the FIRST insert, but begin_recording() clears prior events, so the LAST edit wins -- test or repeat.c semantics?
+- [x] 33. repeat tests: tests/test_repeat.c expected "." to replay the FIRST insert, but begin_recording() clears prior events, so the LAST edit wins -- the code is vim-correct ("repeat last change"); fixed the test to assert last-change replay
+- [x] 34. zoom in/out: Ctrl+= / Ctrl+- / Ctrl+wheel re-step the Pango font at the X11 layer (main.c zoom_font() + render_init()), XENOED_ZOOM_STEP/MIN/MAX in config.h
+- [ ] 35. horizontal scroll or line wrapping
+- [ ] 36. Ctrl-s (in insert mode) should change the [+] mark on the status bar
 
 

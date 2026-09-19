@@ -67,6 +67,28 @@ static void redraw(RenderState *rs, Backbuffer *bb, Editor *ed, int width, int h
     backbuffer_present(bb);
 }
 
+/* Font zoom (todo #34): step the current font size by `step` Pango-relative
+ * units (points for a point-sized font, pixels for an absolute-size one)
+ * in place, clamped to the XENOED_ZOOM_MIN..XENOED_ZOOM_MAX range. The
+ * caller then re-runs render_init() (metrics change: row_height, ascent,
+ * visible rows) and redraws -- a pure view-layer operation, so it lives in
+ * main.c next to wheel-scroll and window-resize instead of the
+ * toolkit-agnostic editor. Returns the new size in point/pixel units. */
+static int zoom_font(PangoFontDescription *font_desc, int step) {
+    int is_absolute = pango_font_description_get_size_is_absolute(font_desc);
+    int size = pango_font_description_get_size(font_desc) / PANGO_SCALE;
+    if (size <= 0) size = 14; /* font desc with no explicit size (Pango default 12) */
+    size += step;
+    if (size < XENOED_ZOOM_MIN) size = XENOED_ZOOM_MIN;
+    if (size > XENOED_ZOOM_MAX) size = XENOED_ZOOM_MAX;
+    if (is_absolute) {
+        pango_font_description_set_absolute_size(font_desc, size * PANGO_SCALE);
+    } else {
+        pango_font_description_set_size(font_desc, size * PANGO_SCALE);
+    }
+    return size;
+}
+
 typedef struct {
     Atom clipboard;
     Atom utf8_string;
@@ -1134,7 +1156,18 @@ int main(int argc, char **argv) {
                     redraw(&rs, &bb, &ed, width, height, focused);
                 } else if (ev.xbutton.button == Button4 || ev.xbutton.button == Button5) {
                     /* Classic X11 mouse wheel: Button4 = up, Button5 = down.
-                     * Works in any mode. cursor is kept in the viewport and
+                     * Hold Ctrl to zoom the font instead (todo #34): the
+                     * wheel's vertical motion becomes in/out, re-measuring
+                     * metrics and redrawing like the Ctrl+=/- keys. Works in
+                     * any mode either way. */
+                    if (ev.xbutton.state & ControlMask) {
+                        zoom_font(font_desc, (ev.xbutton.button == Button4)
+                                                 ? XENOED_ZOOM_STEP : -XENOED_ZOOM_STEP);
+                        render_init(&rs, font_desc);
+                        redraw(&rs, &bb, &ed, width, height, focused);
+                        break;
+                    }
+                    /* Otherwise scroll: cursor is kept in the viewport and
                      * editor_scroll_by syncs follow_line so that the next
                      * redraw's editor_ensure_visible() won't recenter on it. */
                     int visible_rows = render_visible_rows(&rs, height);
@@ -1201,6 +1234,31 @@ int main(int argc, char **argv) {
                 }
                 if (len < 0) len = 0;
                 text[len] = '\0';
+
+                /* Font zoom (todo #34), any mode: Ctrl+= / Ctrl+Shift+= /
+                 * keypad + zoom the font in, Ctrl+- / keypad - zoom out.
+                 * Intercepted here at the X11 layer -- like wheel-scroll
+                 * below -- because it's a presentation op: it only mutates
+                 * the font + metrics, never the buffer, so editor.c never
+                 * sees it and the repeat wrapper can't record it. Note
+                 * Ctrl+= would otherwise arrive as the same control byte
+                 * (0x1D) as the XENOED_KEY_CTRL(']') binding, so checking
+                 * the keysym first both claims it and keeps that binding
+                 * unambiguous. */
+                if ((ev.xkey.state & ControlMask) &&
+                    (keysym == XK_equal || keysym == XK_plus || keysym == XK_KP_Add)) {
+                    zoom_font(font_desc, +XENOED_ZOOM_STEP);
+                    render_init(&rs, font_desc);
+                    redraw(&rs, &bb, &ed, width, height, focused);
+                    break;
+                }
+                if ((ev.xkey.state & ControlMask) &&
+                    (keysym == XK_minus || keysym == XK_KP_Subtract)) {
+                    zoom_font(font_desc, -XENOED_ZOOM_STEP);
+                    render_init(&rs, font_desc);
+                    redraw(&rs, &bb, &ed, width, height, focused);
+                    break;
+                }
 
                 EditorSpecialKey special = classify_keysym(keysym, ev.xkey.state);
                 if (special != EKEY_NONE) {

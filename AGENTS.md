@@ -43,6 +43,10 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   `src/cmdline.c` is a small X11-free tokenizer that splits a shell-style
   command line (single/double quotes, backslash escapes, no expansion) into
   an argv -- what lets `XENOED_COMMANDS` entries be one-liners.
+  Font zoom (todo #34) follows the same "view-only ops live in main.c"
+  rule as wheel-scroll/window-resize: `Ctrl+=`/`Ctrl+-`/`Ctrl+wheel` are
+  intercepted at the X11 layer (never reaching editor.c/repeat.c), step the
+  `PangoFontDescription` size via `zoom_font()` and re-run `render_init()`.
 - **Biggest gotcha**: the `.` repeat command and the `/` search prompt are NOT
   in `editor.c` — they live in `src/repeat.c` as ELF linker wrappers. Both the
   binary and tests link with `-Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key`;
@@ -108,8 +112,9 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   `sub_whole_buffer()` / `sub_selection()`. Whole-buffer in normal mode;
   selection in visual mode (`:` bound in `handle_visual`). The `%s` prefix
   forces whole-buffer scope even in visual mode.
-- `src/config.h` is the compile-time config: font, line spacing, scroll lines,
-  and the `XENOED_COMMANDS` external-command table. The README's
+- `src/config.h` is the compile-time config: font, line spacing, scroll
+  lines, font-zoom step/range, and the `XENOED_COMMANDS` external-command
+  table. The README's
   `make EXTRA_CFLAGS=...` override is **stale** — the Makefile never references
   `EXTRA_CFLAGS`; change defaults in config.h (or carefully via `make CFLAGS=...`,
   which drops the pkg-config include/lib flags). `XENOED_COMMANDS` script

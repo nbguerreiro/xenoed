@@ -53,6 +53,22 @@
 #define XENOED_PAGE_JUMP_LINES 10
 #endif
 
+/* Font zoom (todo #34): points (or pixels, for an absolute-size font)
+ * added/removed per Ctrl+= / Ctrl+- / Ctrl+wheel click. The working range
+ * clamps between XENOED_ZOOM_MIN and XENOED_ZOOM_MAX. Override at compile
+ * time if desired, for example:
+ *   make EXTRA_CFLAGS='-DXENOED_ZOOM_STEP=1'
+ */
+#ifndef XENOED_ZOOM_STEP
+#define XENOED_ZOOM_STEP 2
+#endif
+#ifndef XENOED_ZOOM_MIN
+#define XENOED_ZOOM_MIN 4
+#endif
+#ifndef XENOED_ZOOM_MAX
+#define XENOED_ZOOM_MAX 96
+#endif
+
 /* --- External commands -------------------------------------------------
  *
  * A compile-time table of external scripts, each optionally reachable from

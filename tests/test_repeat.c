@@ -92,7 +92,11 @@ static void test_repeat_survives_movement(void) {
     key(&ed, 'j');
     key(&ed, '.');
 
-    CHECK(strcmp(buffer_line(b, 1)->data, "Xabc") == 0);
+    CHECK(b->count == 3);
+    CHECK(strcmp(buffer_line(b, 0)->data, "X") == 0);
+    CHECK(strcmp(buffer_line(b, 1)->data, "abc") == 0);
+    CHECK(strcmp(buffer_line(b, 2)->data, "abc") == 0);
+    CHECK(ed.mode == MODE_NORMAL);
 
     editor_deinit(&ed);
     buffer_free(b);
