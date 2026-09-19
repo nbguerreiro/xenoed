@@ -57,11 +57,15 @@ test-cmdline: tests/test_cmdline.c src/cmdline.c
 	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o tests/test_cmdline tests/test_cmdline.c src/cmdline.c
 	./tests/test_cmdline
 
+test-render: tests/test_render.c src/render.c src/editor.c src/buffer.c
+	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o tests/test_render tests/test_render.c src/render.c src/editor.c src/buffer.c $(C) $(L)
+	./tests/test_render
+
 lint:
 	cppcheck --enable=warning,style,performance,portability --error-exitcode=1 --inline-suppr $(SRC) 2>&1 | tee lint.log;
 
 clean:
-	rm -rfv $(BIN) $(TEST_BIN) tests/test_cmdhist tests/test_cmdline reports src/*.o *.s *.bc *.db *.log
+	rm -rfv $(BIN) $(TEST_BIN) tests/test_cmdhist tests/test_cmdline tests/test_render reports src/*.o *.s *.bc *.db *.log
 
 install:
 	cp -f $(BIN) ${HOME}/.local/bin/xenoed

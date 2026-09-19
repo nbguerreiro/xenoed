@@ -38,4 +38,13 @@ int render_xy_to_pos(RenderState *rs, cairo_surface_t *surface, Editor *ed,
                       int x, int y, int width, int height,
                       size_t *out_line, size_t *out_col);
 
+/* Horizontal scrolling (todo #35). `render_hscroll_by` moves ed->left_col
+ * by `delta_cols` characters (negative = left) and keeps the cursor inside
+ * the visible text area, exactly the way editor_scroll_by keeps it inside
+ * the viewport vertically. Used by main.c for Shift+wheel-button4/5.
+ * `width` is the window width in pixels (used to compute the text width,
+ * same as render_frame). */
+void render_hscroll_by(RenderState *rs, cairo_surface_t *surface, Editor *ed,
+                       int delta_cols, int width);
+
 #endif

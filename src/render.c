@@ -69,13 +69,132 @@ int render_visible_rows(const RenderState *rs, int height) {
     return rows < 1 ? 1 : rows;
 }
 
+/* x pixel position (layout coordinates, before any horizontal scroll
+ * shift) of `byte_index` within a Pango layout. No rs->padding gutter
+ * offset -- that's added by the callers, so this stays usable for the
+ * scroll math directly. */
+static int layout_byte_x(PangoLayout *layout, size_t byte_index) {
+    PangoRectangle rect;
+    pango_layout_index_to_pos(layout, (int)byte_index, &rect);
+    return rect.x / PANGO_SCALE;
+}
+
+/* ed->left_col clamped to the given line: never past its end, and always
+ * on a UTF-8 boundary -- a scroll offset landing mid-character would slice
+ * a multi-byte glyph at its continuation byte and confuse the align math. */
+static size_t line_left_col(const Line *l, size_t left_col) {
+    if (left_col > l->len) left_col = l->len;
+    while (left_col > 0 && left_col < l->len &&
+           utf8_is_cont((unsigned char)l->data[left_col]))
+        left_col--;
+    return left_col;
+}
+
+/* Horizontal scrolling (todo #35). Called once per frame from render_frame
+ * with the frame's Cairo context -- the only place x positions can be
+ * measured -- to nudge ed->left_col the minimum distance needed to keep
+ * the cursor inside the horizontal viewport, mirroring what
+ * editor_ensure_visible() does for the vertical axis. It never "recenters"
+ * on its own; it only reacts to a cursor that navigation moved out of view.
+ * `text_width` is the usable pixel width of the text area. */
+static void editor_ensure_hscroll(cairo_t *cr, RenderState *rs, Editor *ed, int text_width) {
+    if (text_width <= 0) return;
+    const Line *l = buffer_line(ed->buf, ed->cur_line);
+    size_t lc = line_left_col(l, ed->left_col);
+
+    if (ed->cur_col < lc) {
+        /* Cursor went left of the first visible byte: snap the view back so
+         * the cursor sits at the left edge of the text area. */
+        lc = ed->cur_col;
+    } else {
+        PangoLayout *layout = pango_cairo_create_layout(cr);
+        pango_layout_set_font_description(layout, rs->font_desc);
+        pango_layout_set_text(layout, l->data, (int)l->len);
+
+        int cx = layout_byte_x(layout, ed->cur_col);
+        int lx = layout_byte_x(layout, lc);
+        if (cx - lx > text_width) {
+            /* Cursor past the right edge: scroll right just far enough to
+             * bring it back -- the smallest char boundary whose x position
+             * still clears the left edge. Binary search: x is monotone
+             * (advances are never negative); the result is retro-aligned
+             * to a UTF-8 boundary by line_left_col(). */
+            int target = cx - text_width;
+            size_t lo = 0, hi = ed->cur_col;
+            while (lo < hi) {
+                size_t mid = lo + (hi - lo) / 2;
+                if (layout_byte_x(layout, mid) >= target) hi = mid;
+                else lo = mid + 1;
+            }
+            lc = line_left_col(l, lo);
+        }
+        g_object_unref(layout);
+    }
+    ed->left_col = lc;
+}
+
+void render_hscroll_by(RenderState *rs, cairo_surface_t *surface, Editor *ed,
+                       int delta_cols, int width) {
+    if (delta_cols == 0 || ed->buf->count == 0) return;
+    const Line *l = buffer_line(ed->buf, ed->cur_line);
+    size_t lc = line_left_col(l, ed->left_col);
+
+    /* Move the left edge left (negative) or right by `delta_cols` chars. */
+    if (delta_cols < 0) {
+        size_t n = (size_t)(-delta_cols);
+        while (n > 0 && lc > 0) { lc = utf8_prev_boundary(l->data, lc); n--; }
+    } else {
+        size_t n = (size_t)delta_cols;
+        while (n > 0 && lc < l->len) { lc = utf8_next_boundary(l->data, l->len, lc); n--; }
+    }
+    ed->left_col = lc;
+
+    /* Keep the cursor inside the horizontal viewport, mirroring how
+     * editor_scroll_by keeps it inside the vertical one: a cursor the
+     * scroll left stranded off-screen gets pulled back to the viewport
+     * edge, never left invisible. */
+    int text_width = width - 2 * rs->padding;
+    if (text_width < 1) text_width = 1;
+
+    if (ed->cur_col < lc) {
+        ed->cur_col = lc;
+    } else {
+        cairo_t *cr = cairo_create(surface);
+        PangoLayout *layout = pango_cairo_create_layout(cr);
+        pango_layout_set_font_description(layout, rs->font_desc);
+        pango_layout_set_text(layout, l->data, (int)l->len);
+
+        int cx = layout_byte_x(layout, ed->cur_col);
+        int lx = layout_byte_x(layout, lc);
+        if (cx - lx > text_width) {
+            /* Scroll moved the cursor off the right edge: pull it back to
+             * the last char that still fits (largest boundary with
+             * x <= limit; binary search). */
+            int limit = lx + text_width;
+            size_t lo = 0, hi = ed->cur_col;
+            while (lo < hi) {
+                size_t mid = lo + (hi - lo + 1) / 2;
+                if (layout_byte_x(layout, mid) <= limit) lo = mid;
+                else hi = mid - 1;
+            }
+            size_t col = line_left_col(l, lo);
+            size_t nb = utf8_next_boundary(l->data, l->len, col);
+            if (nb <= ed->cur_col && layout_byte_x(layout, nb) <= limit) col = nb;
+            ed->cur_col = col;
+        }
+        g_object_unref(layout);
+        cairo_destroy(cr);
+    }
+    editor_clamp_cursor(ed);
+}
+
 static void draw_cursor(cairo_t *cr, RenderState *rs, PangoLayout *layout,
                          size_t byte_index, int row_y, int fallback_w,
-                         int block_mode, int focused) {
+                         int block_mode, int focused, int shift) {
     PangoRectangle rect;
     pango_layout_index_to_pos(layout, (int)byte_index, &rect);
 
-    int cx = rs->padding + rect.x / PANGO_SCALE;
+    int cx = shift + rect.x / PANGO_SCALE;
     int cw = rect.width / PANGO_SCALE;
     if (cw <= 0) cw = fallback_w;
 
@@ -97,17 +216,11 @@ static void draw_cursor(cairo_t *cr, RenderState *rs, PangoLayout *layout,
     }
 }
 
-static int layout_x_at(const RenderState *rs, PangoLayout *layout, size_t byte_index) {
-    PangoRectangle rect;
-    pango_layout_index_to_pos(layout, (int)byte_index, &rect);
-    return rs->padding + rect.x / PANGO_SCALE;
-}
-
 static void draw_selection_row(cairo_t *cr, RenderState *rs, PangoLayout *layout,
                                 int row_y, int width, size_t from_col, size_t to_col,
-                                int is_first, int is_last) {
-    int x_from = is_first ? layout_x_at(rs, layout, from_col) : rs->padding;
-    int x_to   = is_last  ? layout_x_at(rs, layout, to_col)   : width;
+                                int is_first, int is_last, int shift) {
+    int x_from = is_first ? shift + layout_byte_x(layout, from_col) : rs->padding;
+    int x_to   = is_last  ? shift + layout_byte_x(layout, to_col)   : width;
     if (x_to <= x_from) x_to = x_from + 2;
 
     cairo_set_source_rgba(cr, SELECTION_R, SELECTION_G, SELECTION_B, SELECTION_A);
@@ -122,6 +235,20 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
 
     int visible_rows = render_visible_rows(rs, height);
     editor_ensure_visible(ed, (size_t)visible_rows);
+
+    /* Horizontal scroll (todo #35): the text area is the window minus both
+     * padding gutters. editor_ensure_hscroll() keeps the cursor inside it;
+     * each row's text is then drawn shifted left by its left_col's x so the
+     * scrolled-out part hangs off-screen, and clipped to the text area so
+     * it stays out of the gutters (and the status bar, reset before that). */
+    int text_left = rs->padding;
+    int text_width = width - 2 * rs->padding;
+    if (text_width < 1) text_width = 1;
+    editor_ensure_hscroll(cr, rs, ed, text_width);
+
+    cairo_rectangle(cr, text_left, rs->top_margin, text_width,
+                    visible_rows * rs->row_height);
+    cairo_clip(cr);
 
     Buffer *buf = ed->buf;
     int fallback_cursor_w = rs->row_height / 2;
@@ -142,26 +269,32 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
         pango_layout_set_font_description(layout, rs->font_desc);
         pango_layout_set_text(layout, l->data, (int)l->len);
 
+        /* Horizontal scroll offset for this row: left_col as a pixel shift,
+         * clamped to the row's own line length (shorter lines are simply
+         * scrolled out past the left edge). */
+        int shift = rs->padding - layout_byte_x(layout, line_left_col(l, ed->left_col));
+
         if (has_sel && line_idx >= sel_fl && line_idx <= sel_tl) {
             draw_selection_row(cr, rs, layout, row_y, width, sel_fc, sel_tc,
-                                line_idx == sel_fl, line_idx == sel_tl);
+                                line_idx == sel_fl, line_idx == sel_tl, shift);
         }
 
         if (line_idx == ed->cur_line && ed->mode != MODE_INSERT) {
-            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 1, focused);
+            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 1, focused, shift);
         }
 
         cairo_set_source_rgb(cr, FG_R, FG_G, FG_B);
-        cairo_move_to(cr, rs->padding, row_y);
+        cairo_move_to(cr, shift, row_y);
         pango_cairo_show_layout(cr, layout);
 
         if (line_idx == ed->cur_line && ed->mode == MODE_INSERT) {
-            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 0, focused);
+            draw_cursor(cr, rs, layout, ed->cur_col, row_y, fallback_cursor_w, 0, focused, shift);
         }
 
         g_object_unref(layout);
     }
 
+    cairo_reset_clip(cr);
     int status_y = rs->top_margin + visible_rows * rs->row_height;
 
     PangoFontDescription *bar_font_desc = pango_font_description_from_string(XENOED_FONT_BAR);
@@ -278,7 +411,11 @@ int render_xy_to_pos(RenderState *rs, cairo_surface_t *surface, Editor *ed,
     pango_layout_set_font_description(layout, rs->font_desc);
     pango_layout_set_text(layout, l->data, (int)l->len);
 
-    int x_rel = x - rs->padding;
+    /* Horizontal scroll (todo #35): add back the pixel width of everything
+     * scrolled off the left edge so the pointer maps to the same byte index
+     * it would if the line were un-scrolled. */
+    int left_x = layout_byte_x(layout, line_left_col(l, ed->left_col));
+    int x_rel = x - rs->padding + left_x;
     if (x_rel < 0) x_rel = 0;
 
     int index = 0, trailing = 0;

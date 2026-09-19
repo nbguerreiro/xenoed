@@ -129,8 +129,14 @@ normal-mode equivalent):
   moves the cursor. The mouse wheel scrolls the viewport by
   `XENOED_SCROLL_LINES` lines (default 3; override at compile time), in
   any mode; the cursor stays inside the visible area so the next redraw
-  doesn't snap the view back. Holding `Ctrl` turns the wheel into font
-  zoom (see the font section above).
+  doesn't snap the view back. Holding `Shift` turns the wheel into
+  horizontal scrolling (long lines; `XENOED_HSCROLL_COLS` characters per
+  click, default 5). Holding `Ctrl` turns the wheel into font zoom (see
+  the font section above).
+- Long lines behave vim-style instead of wrapping: the view scrolls
+  horizontally to keep the cursor in view when it moves past the right
+  edge (e.g. `$`, `l`, search, goto), and `Shift`+wheel nudges the view
+  sideways manually.
 - With an active selection, typing replaces it; `Backspace` deletes it
   (without also deleting an extra character); `Enter` replaces it with a
   line break. Selections spanning multiple lines are supported.
@@ -492,10 +498,16 @@ make -C . 2>/dev/null; cc -std=c11 -D_POSIX_C_SOURCE=200809L \
   && /tmp/test_editor
 ```
 
+`make test-render` additionally exercises `render.c` headlessly (it draws
+onto an in-memory cairo surface -- no X display needed): the horizontal
+scroll follow/clamping from todo #35 and the mouse hit-testing
+(`render_xy_to_pos`) round-trip against it.
+
 ## Known limitations (intentional, for a v1)
 
-- No line wrapping (long lines just run off the right edge).
-- No horizontal scrolling.
+- No line wrapping (long lines scroll horizontally instead; long-line
+  text run off the right edge of the visible area and the view follows
+  the cursor or `Shift`+wheel sideways).
 - `dd` and `r` are the only multi-key normal-mode commands; no `dw`, counts,
   or registers (there's only ever one yank register, not vim's `"a`-`"z`).
 - Visual mode is intentionally minimal: no case-changing or block-visual

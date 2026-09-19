@@ -45,6 +45,18 @@
 #define XENOED_SCROLL_LINES 3
 #endif
 
+/* Characters scrolled per Shift+wheel click (todo #35 horizontal scrolling):
+ * without Shift the wheel scrolls vertically by XENOED_SCROLL_LINES; holding
+ * Shift scrolls long lines sideways by this many characters instead. The
+ * editor also scrolls horizontally on its own to keep the cursor in view
+ * when it moves past the right edge (search/goto/`$` land with the cursor
+ * visible). Override at compile time if desired, for example:
+ *   make EXTRA_CFLAGS='-DXENOED_HSCROLL_COLS=10'
+ */
+#ifndef XENOED_HSCROLL_COLS
+#define XENOED_HSCROLL_COLS 5
+#endif
+
 /* Lines jumped per Page Down/Page Up key (X11 Next/Prior). Override at
  * compile time if desired, for example:
  *   make EXTRA_CFLAGS='-DXENOED_PAGE_JUMP_LINES=25'

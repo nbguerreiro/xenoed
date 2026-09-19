@@ -17,6 +17,11 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
 - Tests are headless (no X display needed):
   - `make test-cmdhist` works.
   - `make test-cmdline` (the XENOED_COMMANDS one-liner tokenizer) works.
+  - `make test-render` (todo #35 horizontal scroll + `render_xy_to_pos`
+    hit-testing, on an in-memory cairo surface) works. It also passes under
+    ASan/UBSan (`cc -fsanitize=address,undefined tests/test_render.c
+    src/render.c src/editor.c src/buffer.c $(pkg-config --cflags --libs
+    cairo pangocairo) -lX11`).
   - `make test` (repeat tests) works as far as linking goes (the `-lX11`
     fix described two lines down has been applied), but it **still fails at
     runtime**: `tests/test_repeat.c:95` asserts `.` replays the FIRST insert
@@ -47,6 +52,15 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   rule as wheel-scroll/window-resize: `Ctrl+=`/`Ctrl+-`/`Ctrl+wheel` are
   intercepted at the X11 layer (never reaching editor.c/repeat.c), step the
   `PangoFontDescription` size via `zoom_font()` and re-run `render_init()`.
+  Horizontal scroll (todo #35) is the same idea but one layer down: it
+  lives in render.c, because advance widths need Pango. `ed->left_col` (a
+  byte offset per line) is the horizontal `top_line`, kept on the Editor
+  struct but touched only by render.c; `render_frame`'s
+  `editor_ensure_hscroll()` nudges it to keep the cursor in view and every
+  row is drawn clipped/`shift`ed to the text area; `render_hscroll_by()`
+  is the Shift+wheel analogue of `editor_scroll_by()`; `render_xy_to_pos`
+  adds back the scrolled-px so mouse hit-testing stays byte-accurate.
+  `tests/test_render.c` covers all of it headlessly (image surface, no X).
 - **Biggest gotcha**: the `.` repeat command and the `/` search prompt are NOT
   in `editor.c` — they live in `src/repeat.c` as ELF linker wrappers. Both the
   binary and tests link with `-Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key`;

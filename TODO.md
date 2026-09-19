@@ -43,7 +43,7 @@
 - [x] 32. in the status bar, filenames like "/home/fx/..." can be shortened to "~/..."
 - [x] 33. repeat tests: tests/test_repeat.c expected "." to replay the FIRST insert, but begin_recording() clears prior events, so the LAST edit wins -- the code is vim-correct ("repeat last change"); fixed the test to assert last-change replay
 - [x] 34. zoom in/out: Ctrl+= / Ctrl+- / Ctrl+wheel re-step the Pango font at the X11 layer (main.c zoom_font() + render_init()), XENOED_ZOOM_STEP/MIN/MAX in config.h
-- [ ] 35. horizontal scroll or line wrapping
+- [x] 35. horizontal scroll: Shift+wheel by XENOED_HSCROLL_COLS chars (main.c), cursor-follow/keep-in-view via render.c editor_ensure_hscroll()/render_hscroll_by(); left_col field on Editor, view-layer-only (needs Pango pixel widths); XENOED_HSCROLL_COLS in config.h; tests/test_render.c headless coverage
 - [ ] 36. Ctrl-s (in insert mode) should change the [+] mark on the status bar
 
 

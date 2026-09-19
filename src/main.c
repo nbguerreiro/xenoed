@@ -1159,11 +1159,22 @@ int main(int argc, char **argv) {
                      * Hold Ctrl to zoom the font instead (todo #34): the
                      * wheel's vertical motion becomes in/out, re-measuring
                      * metrics and redrawing like the Ctrl+=/- keys. Works in
-                     * any mode either way. */
+                     * any mode either way. Hold Shift to scroll horizontally
+                     * instead (todo #35): long lines move sideways by
+                     * XENOED_HSCROLL_COLS characters per click. */
                     if (ev.xbutton.state & ControlMask) {
                         zoom_font(font_desc, (ev.xbutton.button == Button4)
                                                  ? XENOED_ZOOM_STEP : -XENOED_ZOOM_STEP);
                         render_init(&rs, font_desc);
+                        redraw(&rs, &bb, &ed, width, height, focused);
+                        break;
+                    }
+                    if (ev.xbutton.state & ShiftMask) {
+                        render_hscroll_by(&rs, bb.surface, &ed,
+                                          (ev.xbutton.button == Button4)
+                                              ? -XENOED_HSCROLL_COLS : XENOED_HSCROLL_COLS,
+                                          width);
+                        sync_primary_ownership(dpy, win, &ed, &sel);
                         redraw(&rs, &bb, &ed, width, height, focused);
                         break;
                     }

@@ -55,6 +55,13 @@ typedef struct {
     size_t cur_col;    /* byte offset into current line, always on a UTF-8 boundary */
 
     size_t top_line;   /* first visible line, for vertical scrolling */
+    size_t left_col;   /* byte offset of the first visible byte of each line,
+                        * for horizontal scrolling (todo #35). Char-aligned;
+                        * always 0 when nothing is scrolled. Kept in the
+                        * toolkit-agnostic Editor only so the view layer
+                        * (render.c, the only place that can measure pixel
+                        * widths) has one home for it -- editor.c itself
+                        * never reads it. */
 
     /* Viewport-follow state. editor_ensure_visible() centers the cursor
      * vertically whenever cur_line moves, but must NOT recenter when the
