@@ -766,6 +766,26 @@ static char *run_dmenu(Display *dpy, Window win, const char *const *items, int n
     return out;
 }
 
+static void resolve_save_conflict(Display *dpy, Window win, Editor *ed) {
+    /* todo #31: :w/:wq/:x that hit a "file changed on disk" condition are
+     * deferred by editor_run_command (save_conflict_requested flag), never
+     * silently clobbering an external edit. Pop the overwrite-or-reload
+     * warning and apply the choice: a forced save via editor_save_force(),
+     * a discard-and-reload via the existing `:e!` (which re-baselines the
+     * disk fingerprint so the status bar's [!] clears), or nothing on
+     * Escape. */
+    const char *items[2] = { "Overwrite", "Reload from disk" };
+    char *choice = run_dmenu(dpy, win, items, 2, "File changed on disk:");
+    if (choice) {
+        if (strcmp(choice, "Overwrite") == 0) {
+            editor_save_force(ed);
+        } else if (strcmp(choice, "Reload from disk") == 0) {
+            editor_run_command(ed, "e!");
+        }
+        free(choice);
+    }
+}
+
 static void show_context_menu(Display *dpy, Window win, Editor *ed) {
     int has_sel = editor_has_selection(ed);
 
@@ -1222,6 +1242,11 @@ int main(int argc, char **argv) {
                 if (ed.command_menu_requested) {
                     ed.command_menu_requested = 0;
                     show_command_menu(dpy, win, &ed);
+                    if (ed.want_quit) { running = 0; break; }
+                }
+                if (ed.save_conflict_requested) {
+                    ed.save_conflict_requested = 0;
+                    resolve_save_conflict(dpy, win, &ed);
                     if (ed.want_quit) { running = 0; break; }
                 }
                 if (ed.goto_line_requested) {

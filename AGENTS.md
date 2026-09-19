@@ -17,9 +17,15 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
 - Tests are headless (no X display needed):
   - `make test-cmdhist` works.
   - `make test-cmdline` (the XENOED_COMMANDS one-liner tokenizer) works.
-  - `make test` (repeat tests) is **currently broken**: the recipe never links
-    libX11, but `src/repeat.c` now needs it → undefined `XOpenDisplay`/
-    `XQueryTree`. Fix by adding `-lX11` to the `tests/test_repeat` link.
+  - `make test` (repeat tests) works as far as linking goes (the `-lX11`
+    fix described two lines down has been applied), but it **still fails at
+    runtime**: `tests/test_repeat.c:95` asserts `.` replays the FIRST insert
+    (`i`+`X`) while `begin_recording()` in src/repeat.c clears prior events,
+    so the LAST edit (`o`+`abc`) wins — the test expectation contradicts the
+    vim-like "repeat last change" semantics. Unknown whether the test or the
+    code is "right" (todo #33 candidate). The README's manual `cc` editor
+    suite (`tests/test_editor.c`) links but has the pre-existing config.h
+    sample-drift crash at test 98 (see below).
   - The README's manual `cc -std=c11 -D_POSIX_C_SOURCE=200809L
     tests/test_editor.c src/buffer.c src/editor.c -o /tmp/test_editor &&
     /tmp/test_editor` works and is the broadest editor/buffer suite.

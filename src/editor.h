@@ -121,6 +121,22 @@ typedef struct {
     int user_command_requested;
     int user_command_index;
 
+    /* Disk-change conflict on save (':w', ':w <path>', ':wq', ':x'). When
+     * buffer_disk_changed() reports the file moved on disk, editor.c
+     * refuses to clobber it silently: instead of saving, it sets this
+     * flag and stashes exactly what the pending save would have been in
+     * save_conflict_path (first byte '\0' == "use b->filename") and
+     * save_conflict_quit (the command was ':wq'/':x', so a successful
+     * save must quit), so main.c can pop its "overwrite or reload from
+     * disk?" warning -- the dialog needs a subprocess, which this
+     * toolkit-agnostic file never spawns. main.c resolves it with
+     * editor_save_force() (overwrite) or editor_run_command(ed, "e!")
+     * (reload); a cancel just clears the flag and the buffer stays
+     * unsaved, the status bar's [!] still showing. */
+    int save_conflict_requested;
+    int save_conflict_quit;
+    char save_conflict_path[256];
+
     /* Selection state (insert-mode Shift+arrow/mouse-drag, or Visual mode).
      * The anchor is fixed where the selection began; the moving endpoint is
      * always the current cursor position, so we only need to track the
@@ -281,13 +297,21 @@ int editor_replace_word_text_at_end(Editor *ed, const char *text, size_t len);
 void editor_yank_selection(Editor *ed);
 void editor_cut_selection(Editor *ed);
 
-/* Parses and runs one ':' command (e.g. "w", "w path", "q", "q!", "wq",
- * "x") -- what used to be typed character-by-character into the inline
- * ':' bar now arrives here as a single string, typically from a dmenu
- * picker. Unknown commands and an empty string are both handled
- * gracefully (status message / silent no-op respectively), same as
+/* Parses and runs one ':' command (e.g. "w", "w path", "e", "e!",
+ * "q", "q!", "wq", "x") -- what used to be typed character-by-character
+ * into the inline ':' bar now arrives here as a single string, typically
+ * from a dmenu picker. Unknown commands and an empty string are both
+ * handled gracefully (status message / silent no-op respectively), same as
  * before. */
 void editor_run_command(Editor *ed, const char *cmd);
+
+/* The "overwrite" half of the disk-changed save conflict: performs the
+ * save the conflicted :w/:wq/:x deferred (same target path, same
+ * save-and-quit intent), skipping the buffer_disk_changed() guard main.c
+ * has already shown the user. The "reload from disk" half is plain
+ * `:e!` via editor_run_command(). Only meaningful after
+ * editor_run_command() set save_conflict_requested; clears it. */
+void editor_save_force(Editor *ed);
 
 /* The known ':' commands, for anything (a dmenu-based picker, currently)
  * that wants to offer them as a menu. This list and editor_run_command()'s

@@ -201,6 +201,15 @@ typing, e.g. `w notes.txt` -- dmenu returns whatever's currently typed on
 Enter even when nothing's highlighted, so commands taking an argument work
 exactly as they did with the old bar, just entered through dmenu instead.
 
+### Save conflicts
+
+If the file on disk was changed by another program since xenoed last loaded
+or saved it -- the `[!]` the status bar shows -- a save (`:w`, `:w path`,
+`:wq`, `:x`) won't silently clobber it. Instead a dmenu warning asks whether
+to **Overwrite** the on-disk version anyway or **Reload from disk** to keep
+the external edit and discard your in-editor changes; Escape cancels and
+leaves the buffer unsaved.
+
 ### Search and replace (`:s`)
 
 `:s/pattern/repl/` finds `pattern` (POSIX extended regex, case-insensitive)

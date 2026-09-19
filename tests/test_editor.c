@@ -907,14 +907,15 @@ int main(void) {
             if (XENOED_COMMANDS[i].name) user_named++;
         }
         printf("Test 48 (editor_command_names): count=%d\n", count);
-        CHECK(count == 6 + user_named);
+        CHECK(count == 7 + user_named);
         CHECK(strcmp(names[0], "w") == 0);
-        CHECK(strcmp(names[1], "q") == 0);
-        CHECK(strcmp(names[2], "q!") == 0);
-        CHECK(strcmp(names[3], "wq") == 0);
-        CHECK(strcmp(names[4], "x") == 0);
-        CHECK(strcmp(names[5], "s/pat/repl/[g]") == 0);
-        for (int i = 0, n = 6; XENOED_COMMANDS[i].script != NULL; i++) {
+        CHECK(strcmp(names[1], "e") == 0);
+        CHECK(strcmp(names[2], "q") == 0);
+        CHECK(strcmp(names[3], "q!") == 0);
+        CHECK(strcmp(names[4], "wq") == 0);
+        CHECK(strcmp(names[5], "x") == 0);
+        CHECK(strcmp(names[6], "s/pat/repl/[g]") == 0);
+        for (int i = 0, n = 7; XENOED_COMMANDS[i].script != NULL; i++) {
             if (!XENOED_COMMANDS[i].name) continue;
             CHECK(strcmp(names[n], XENOED_COMMANDS[i].name) == 0);
             n++;
@@ -2450,6 +2451,252 @@ int main(void) {
         CHECK(strstr(ed.status, "insert-mode") != NULL);
         editor_deinit(&ed);
         buffer_free(b);
+    }
+
+    /* Test 107: buffer_disk_changed()/b->dirty drive the status bar's
+     * modified indicators: [+ when edited in-editor] and [! when the file
+     * on disk moved behind the editor's back (created, edited, deleted). */
+    {
+        const char *path = "/tmp/xenoed_disk_test.txt";
+        remove(path);
+
+        Buffer *b = buffer_new();
+        CHECK(buffer_load(b, path) == 0);
+        CHECK(!b->dirty);
+        CHECK(!buffer_disk_changed(b)); /* no such file yet, no baseline */
+
+        /* An external program creates the file -> changed. */
+        FILE *tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("hello world\n", tf); fclose(tf); }
+        CHECK(buffer_disk_changed(b));
+
+        /* Reloading re-baselines -> no longer changed. */
+        CHECK(buffer_load(b, path) == 0);
+        CHECK(!buffer_disk_changed(b));
+        CHECK(strcmp(buffer_line(b, 0)->data, "hello world") == 0);
+
+        /* External edit after load -> changed again. */
+        tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("hello world again\n", tf); fclose(tf); }
+        CHECK(buffer_disk_changed(b));
+
+        /* In-editor modification + save: dirty clears, and save re-baselines
+         * the disk fingerprint so the [!] goes away. */
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "iz<Esc>");
+        printf("Test 107a (in-editor edit): dirty=%d\n", b->dirty);
+        CHECK(b->dirty);
+        printf("Test 107b (external edit detected): disk_changed=%d\n",
+               buffer_disk_changed(b));
+        CHECK(buffer_disk_changed(b));
+        CHECK(buffer_save(b, NULL) == 0);
+        CHECK(!b->dirty);
+        CHECK(!buffer_disk_changed(b));
+
+        /* Deleting the file we had a baseline for counts as a change. */
+        CHECK(remove(path) == 0);
+        CHECK(buffer_disk_changed(b));
+
+        editor_deinit(&ed);
+        buffer_free(b);
+    }
+
+    /* Test 108: `:e` reloads the current file from disk (or a given path),
+     * refusing while the buffer is dirty unless forced with `:e!` -- the
+     * way to pick up an external edit after the status bar's [!]. */
+    {
+        const char *path = "/tmp/xenoed_e_test.txt";
+        FILE *tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("old\n", tf); fclose(tf); }
+
+        Buffer *b = buffer_new();
+        CHECK(buffer_load(b, path) == 0);
+        Editor ed; editor_init(&ed, b);
+
+        /* An external program rewrites the file. */
+        tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("new content\n", tf); fclose(tf); }
+        CHECK(buffer_disk_changed(b));
+
+        /* :e on a dirty buffer refuses (keeps the in-editor version). */
+        feed(&ed, "iZ<Esc>");
+        CHECK(b->dirty);
+        editor_run_command(&ed, "e");
+        printf("Test 108a (\":e\" refused while dirty): status=\"%s\" dirty=%d\n",
+               ed.status, b->dirty);
+        CHECK(b->dirty);
+        CHECK(strstr(ed.status, "unsaved") != NULL);
+        CHECK(strcmp(buffer_line(b, 0)->data, "Zold") == 0);
+
+        /* :e! discards and reloads the on-disk version; the [!] clears. */
+        editor_run_command(&ed, "e!");
+        printf("Test 108b (\":e!\" reloads): status=\"%s\" dirty=%d disk_changed=%d\n",
+               ed.status, b->dirty, buffer_disk_changed(b));
+        CHECK(!b->dirty);
+        CHECK(!buffer_disk_changed(b));
+        CHECK(b->count == 1 && strcmp(buffer_line(b, 0)->data, "new content") == 0);
+
+        /* :e with no filename and no path is an error. */
+        Buffer *nb = buffer_new();
+        buffer_load(nb, NULL);
+        Editor ned; editor_init(&ned, nb);
+        editor_run_command(&ned, "e");
+        printf("Test 108c (\":e\" with no file name): status=\"%s\"\n", ned.status);
+        CHECK(strstr(ned.status, "no file name") != NULL);
+
+        editor_deinit(&ned);
+        buffer_free(nb);
+        editor_deinit(&ed);
+        buffer_free(b);
+        remove(path);
+    }
+
+    /* Test 109: a save (`:w`) onto a file that changed on disk is
+     * DEFERRED, never silently clobbering the external edit: editor.c sets
+     * save_conflict_requested and stashes the pending save; main.c pops
+     * the overwrite/reload warning and finishes it with editor_save_force()
+     * (or `:e!` for reload). */
+    {
+        const char *path = "/tmp/xenoed_conflict_test.txt";
+        FILE *tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("external\n", tf); fclose(tf); }
+
+        Buffer *b = buffer_new();
+        CHECK(buffer_load(b, path) == 0);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ddiinternal<Esc>"); /* wipe loaded text, then an in-editor edit */
+        CHECK(b->dirty);
+        CHECK(!buffer_disk_changed(b)); /* baseline matches what we loaded */
+
+        /* An external program rewrites the file behind our back. */
+        tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("changed on disk\n", tf); fclose(tf); }
+        CHECK(buffer_disk_changed(b));
+
+        /* :w must NOT overwrite -- it defers and records the intent. */
+        editor_run_command(&ed, "w");
+        printf("Test 109a (:w defers on disk change): requested=%d status=\"%s\" dirty=%d\n",
+               ed.save_conflict_requested, ed.status, b->dirty);
+        CHECK(ed.save_conflict_requested);
+        CHECK(!ed.save_conflict_quit);
+        CHECK(ed.save_conflict_path[0] == '\0'); /* "use b->filename" */
+        CHECK(b->dirty);                          /* still unsaved */
+        CHECK(strcmp(buffer_line(b, 0)->data, "internal") == 0);
+        CHECK(buffer_disk_changed(b)); /* disk untouched by the deferral */
+
+        /* Overwrite resolves the conflict: buffer content hit disk, the
+         * disk fingerprint re-baselines so the status bar [!] clears. */
+        editor_save_force(&ed);
+        printf("Test 109b (editor_save_force overwrites): requested=%d status=\"%s\" dirty=%d\n",
+               ed.save_conflict_requested, ed.status, b->dirty);
+        CHECK(!ed.save_conflict_requested);
+        CHECK(!b->dirty);
+        CHECK(!buffer_disk_changed(b));
+        tf = fopen(path, "rb");
+        CHECK(tf != NULL);
+        {
+            char buf[64] = {0};
+            size_t got = tf ? fread(buf, 1, sizeof(buf) - 1, tf) : 0;
+            if (tf) fclose(tf);
+            CHECK(got == 9 && strcmp(buf, "internal\n") == 0);
+        }
+
+        editor_deinit(&ed);
+        buffer_free(b);
+        remove(path);
+    }
+
+    /* Test 110: a :wq conflict defers the QUIT too -- want_quit is only
+     * set by a successful editor_save_force() (the overwrite choice),
+     * never by the deferral itself. */
+    {
+        const char *path = "/tmp/xenoed_conflict_wq_test.txt";
+        FILE *tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("orig\n", tf); fclose(tf); }
+
+        Buffer *b = buffer_new();
+        CHECK(buffer_load(b, path) == 0);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "iX<Esc>");
+        tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("other\n", tf); fclose(tf); }
+        CHECK(buffer_disk_changed(b));
+
+        editor_run_command(&ed, "wq");
+        printf("Test 110a (:wq defers quit on conflict): requested=%d quit=%d want_quit=%d\n",
+               ed.save_conflict_requested, ed.save_conflict_quit, ed.want_quit);
+        CHECK(ed.save_conflict_requested);
+        CHECK(ed.save_conflict_quit);
+        CHECK(!ed.want_quit); /* hasn't quit -- the save never happened */
+
+        editor_save_force(&ed);
+        printf("Test 110b (:wq overwrite then quits): want_quit=%d status=\"%s\" dirty=%d\n",
+               ed.want_quit, ed.status, b->dirty);
+        CHECK(ed.want_quit);
+        CHECK(!b->dirty);
+        CHECK(!buffer_disk_changed(b));
+
+        editor_deinit(&ed);
+        buffer_free(b);
+        remove(path);
+    }
+
+    /* Test 111: `:w <path>` carries the explicit target through the
+     * conflict; editor_save_force() writes THERE (and adopts it as the
+     * buffer's filename, like any successful save-as). */
+    {
+        const char *path = "/tmp/xenoed_conflict_path_test.txt";
+        const char *target = "/tmp/xenoed_conflict_path_save.txt";
+        remove(target);
+        FILE *tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("gone\n", tf); fclose(tf); }
+
+        Buffer *b = buffer_new();
+        CHECK(buffer_load(b, path) == 0);
+        Editor ed; editor_init(&ed, b);
+        feed(&ed, "ddinew<Esc>"); /* wipe loaded text, then an in-editor edit */
+        tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        if (tf) { fputs("changed\n", tf); fclose(tf); }
+        CHECK(buffer_disk_changed(b));
+
+        editor_run_command(&ed, "w /tmp/xenoed_conflict_path_save.txt");
+        printf("Test 111a (:w <path> defers with the path stashed): requested=%d saved_path=\"%s\"\n",
+               ed.save_conflict_requested, ed.save_conflict_path);
+        CHECK(ed.save_conflict_requested);
+        CHECK(strcmp(ed.save_conflict_path, target) == 0);
+        CHECK(buffer_disk_changed(b)); /* original file still untouched */
+
+        editor_save_force(&ed);
+        printf("Test 111b (:w <path> overwrite completes): status=\"%s\" filename=\"%s\"\n",
+               ed.status, b->filename);
+        CHECK(!ed.save_conflict_requested);
+        CHECK(!b->dirty);
+        CHECK(!buffer_disk_changed(b));
+        CHECK(strcmp(b->filename, target) == 0);
+        CHECK(strcmp(buffer_line(b, 0)->data, "new") == 0);
+        tf = fopen(target, "rb");
+        CHECK(tf != NULL);
+        {
+            char buf[16] = {0};
+            size_t got = tf ? fread(buf, 1, sizeof(buf) - 1, tf) : 0;
+            if (tf) fclose(tf);
+            CHECK(got == 4 && strcmp(buf, "new\n") == 0);
+        }
+
+        editor_deinit(&ed);
+        buffer_free(b);
+        remove(path);
+        remove(target);
     }
 
     if (failures == 0) {

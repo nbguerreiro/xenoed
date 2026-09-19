@@ -47,7 +47,7 @@ main: $(SRC)
 	$(CC) -o $(BIN) $(SRC) $(CFLAGS) $(LDFLAGS) -Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key 2>&1 | tee out.log;
 
 $(TEST_BIN): $(TEST_SRC)
-	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o $@ $(TEST_SRC) -Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key
+	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o $@ $(TEST_SRC) -Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key -lX11
 
 test-cmdhist: tests/test_cmdhist.c src/cmdhist.c
 	$(CC) -std=c11 -O1 -Wall -Wextra -Isrc -o tests/test_cmdhist tests/test_cmdhist.c src/cmdhist.c

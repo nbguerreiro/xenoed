@@ -37,9 +37,9 @@
 - [x] 26. should be able to select with mouse while on normal mode
 - [x] 27. goto line
 - [x] 28. small margin at top
-- [ ] 29. the status bar should indicate if file was modified in-editor, and if it was modified on disk. 
-- [ ] 30. Command to reload from disk.
-- [ ] 31. in the status bar, filenames like "/home/fx/..." can be shortened to "~/..."
-
+- [x] 29. the status bar should indicate if file was modified in-editor, and if it was modified on disk. 
+- [x] 30. Command to reload from disk.
+- [x] 31. if trying to save a file modified on disk, there should be a warning asking if overwrite or reload from disk.
+- [ ] 32. in the status bar, filenames like "/home/fx/..." can be shortened to "~/..."
 
 

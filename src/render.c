@@ -183,11 +183,19 @@ void render_frame(RenderState *rs, cairo_surface_t *surface, Editor *ed, int wid
                                             (glong)ed->cur_col);
     snprintf(col_text, sizeof(col_text), "%zu", col);
 
+    /* Modified-in-editor shows vim-style as [+]; a file edited (or created/
+     * deleted) behind our back since the last load/save shows as [!]. */
+    char file_label[512];
+    snprintf(file_label, sizeof(file_label), "%s%s%s",
+             fname,
+             buf->dirty ? " [+]" : "",
+             buffer_disk_changed(buf) ? " [!]" : "");
+
     PangoLayout *name_layout = pango_cairo_create_layout(cr);
     pango_layout_set_font_description(name_layout, bar_font_desc);
     pango_layout_set_width(name_layout, name_width * PANGO_SCALE);
     pango_layout_set_ellipsize(name_layout, PANGO_ELLIPSIZE_END);
-    pango_layout_set_text(name_layout, fname, -1);
+    pango_layout_set_text(name_layout, file_label, -1);
 
     PangoLayout *line_layout = pango_cairo_create_layout(cr);
     pango_layout_set_font_description(line_layout, bar_font_desc);

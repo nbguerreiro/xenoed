@@ -1103,6 +1103,54 @@ static void editor_request_user_command(Editor *ed, int index) {
     ed->user_command_requested = 1;
 }
 
+/* Shared save path for :w, :w <path>, :wq and :x. Saves b->filename (or
+ * `path`) unless the file changed on disk since our own last load/save
+ * (buffer_disk_changed): then the save is DEFERRED, recorded on the Editor
+ * for main.c to finish -- this file never clobbers an external edit
+ * silently, and has no OS access to run the overwrite-or-reload dialog
+ * itself (see editor_save_force). `quit` is true for :wq/:x, which quit
+ * on a successful save. Returns 1 when deferred, 0 once a save was
+ * attempted (its outcome is in the status bar either way). */
+static int save_or_defer(Editor *ed, const char *path, int quit) {
+    Buffer *b = ed->buf;
+    if (!path && !b->filename) {
+        set_status(ed, quit ? "E: no file name (use :w <path> first)"
+                            : "E: no file name (use :w <path>)");
+        return 0;
+    }
+    if (buffer_disk_changed(b)) {
+        ed->save_conflict_requested = 1;
+        ed->save_conflict_quit = quit;
+        if (path) {
+            snprintf(ed->save_conflict_path, sizeof(ed->save_conflict_path), "%s", path);
+        } else {
+            ed->save_conflict_path[0] = '\0'; /* "use b->filename" */
+        }
+        set_status(ed, "E: file changed on disk -- overwrite or reload?");
+        return 1;
+    }
+    if (buffer_save(b, path) == 0) {
+        set_status(ed, "\"%s\" written", b->filename);
+        if (quit) ed->want_quit = 1;
+    } else {
+        set_status(ed, "E: could not write %s", b->filename);
+    }
+    return 0;
+}
+
+void editor_save_force(Editor *ed) {
+    Buffer *b = ed->buf;
+    const char *path = ed->save_conflict_path[0] ? ed->save_conflict_path : NULL;
+    ed->save_conflict_requested = 0;
+    /* `path` may be NULL -> b->filename, exactly like plain :w. */
+    if (buffer_save(b, path) == 0) {
+        set_status(ed, "\"%s\" written", b->filename);
+        if (ed->save_conflict_quit) ed->want_quit = 1;
+    } else {
+        set_status(ed, "E: could not write %s", b->filename);
+    }
+}
+
 void editor_run_command(Editor *ed, const char *raw_cmd) {
     Buffer *b = ed->buf;
     const char *cmd = raw_cmd;
@@ -1117,18 +1165,43 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
     } else if (strcmp(cmd, "q!") == 0) {
         ed->want_quit = 1;
     } else if (strcmp(cmd, "w") == 0) {
-        if (!b->filename) set_status(ed, "E: no file name (use :w <path>)");
-        else if (buffer_save(b, NULL) == 0) set_status(ed, "\"%s\" written", b->filename);
-        else set_status(ed, "E: could not write %s", b->filename);
+        save_or_defer(ed, NULL, 0);
     } else if (strncmp(cmd, "w ", 2) == 0) {
         const char *path = cmd + 2;
         while (*path == ' ') path++;
-        if (buffer_save(b, path) == 0) set_status(ed, "\"%s\" written", b->filename);
-        else set_status(ed, "E: could not write %s", b->filename);
+        save_or_defer(ed, path, 0);
     } else if (strcmp(cmd, "wq") == 0 || strcmp(cmd, "x") == 0) {
-        if (!b->filename) { set_status(ed, "E: no file name (use :w <path> first)"); }
-        else if (buffer_save(b, NULL) == 0) ed->want_quit = 1;
-        else set_status(ed, "E: could not write %s", b->filename);
+        save_or_defer(ed, NULL, 1);
+    } else if (strcmp(cmd, "e") == 0 || strcmp(cmd, "e!") == 0 ||
+               strncmp(cmd, "e ", 2) == 0 || strncmp(cmd, "e! ", 3) == 0) {
+        /* `:e` reloads the current file from disk; `:e <path>` loads that
+         * file instead. Without the `!`, a buffer that's been modified
+         * in-editor is refused so editing work isn't thrown away silently
+         * (mirroring the `:q` guard); `:e!` discards and reloads
+         * unconditionally -- the way to pick up an external edit that a
+         * `buffer_disk_changed()` [!] warned about. */
+        const char *p = cmd + 1;
+        int force = 0;
+        if (*p == '!') { force = 1; p++; }
+        while (*p == ' ') p++;
+        const char *target = (*p != '\0') ? p : b->filename;
+
+        if (!force && b->dirty) {
+            set_status(ed, "E: unsaved changes (:e! to discard)");
+        } else if (!target) {
+            set_status(ed, "E: no file name (use :e <path>)");
+        } else if (buffer_load(b, target) == 0) {
+            /* The whole buffer changed under us, same as any buffer-wide
+             * replace: the old cursor/selection position is meaningless. */
+            ed->cur_line = 0;
+            ed->cur_col = 0;
+            editor_selection_clear(ed);
+            if (ed->mode == MODE_VISUAL) ed->mode = MODE_NORMAL;
+            editor_clamp_cursor(ed);
+            set_status(ed, "\"%s\" loaded", target);
+        } else {
+            set_status(ed, "E: could not read %s", target);
+        }
     } else if (cmd[0] == 's' || (cmd[0] == '%' && cmd[1] == 's')) {
         /* `s/pat/repl/[g]` search-and-replace (run_substitute returns 0 only
          * if the string isn't actually one -- then a config.h command named
@@ -1167,13 +1240,14 @@ void editor_run_command(Editor *ed, const char *raw_cmd) {
 }
 
 const char *const *editor_command_names(int *out_count) {
-    static const char *const builtin[] = { "w", "q", "q!", "wq", "x", "s/pat/repl/[g]" };
-    static const char *names[6 + 64];
+    static const char *const builtin[] = { "w", "e", "q", "q!", "wq", "x", "s/pat/repl/[g]" };
+    enum { BUILTIN_N = sizeof(builtin) / sizeof(builtin[0]) };
+    static const char *names[BUILTIN_N + 64];
     int n = 0;
-    for (size_t i = 0; i < sizeof(builtin) / sizeof(builtin[0]) && n < 6 + 64; i++) {
+    for (size_t i = 0; i < BUILTIN_N; i++) {
         names[n++] = builtin[i];
     }
-    for (int i = 0; XENOED_COMMANDS[i].script != NULL && n < 6 + 64; i++) {
+    for (int i = 0; XENOED_COMMANDS[i].script != NULL && n < BUILTIN_N + 64; i++) {
         if (XENOED_COMMANDS[i].name) names[n++] = XENOED_COMMANDS[i].name;
     }
     *out_count = n;

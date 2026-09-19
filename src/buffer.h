@@ -2,6 +2,8 @@
 #define XENOED_BUFFER_H
 
 #include <stddef.h>
+#include <sys/types.h>
+#include <time.h>
 
 typedef struct {
     char *data;   /* UTF-8 bytes, NOT NUL-terminated guaranteed but we keep
@@ -17,6 +19,15 @@ typedef struct {
     size_t cap;
     char *filename; /* may be NULL */
     int dirty;
+    /* On-disk fingerprint of filename, captured by buffer_load() and
+     * refreshed by buffer_save(), so buffer_disk_changed() can detect an
+     * external program editing (or deleting, or creating) the file between
+     * our own reads/writes. disk_known is 0 until the first successful
+     * stat(): a load that found no such file keeps it 0, so a file that
+     * appears later still counts as a change. */
+    int disk_known;
+    time_t disk_mtime;
+    off_t disk_size;
 } Buffer;
 
 Buffer *buffer_new(void);
@@ -33,6 +44,13 @@ int buffer_load(Buffer *b, const char *path);
  * to the whole buffer -- unlike buffer_load, this never touches disk. */
 void buffer_set_from_text(Buffer *b, const char *text, size_t len);
 int buffer_save(Buffer *b, const char *path); /* path may be NULL -> use b->filename */
+
+/* True when the file on disk no longer matches the state buffer_load() or
+ * buffer_save() last recorded: someone else modified it (mtime or size
+ * moved), deleted it, or -- for a path that didn't exist at load -- created
+ * it. Always false when there is no filename. This is what lets the status
+ * bar show a "changed on disk" hint next to the [+]. */
+int buffer_disk_changed(const Buffer *b);
 
 Line *buffer_line(Buffer *b, size_t idx);
 

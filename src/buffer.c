@@ -3,7 +3,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
+
+/* Record the file's current mtime/size as the baseline the buffer was
+ * read from or written to. A failed stat (no such file) leaves
+ * disk_known = 0, disarming buffer_disk_changed() until the file exists. */
+static void disk_capture(Buffer *b) {
+    b->disk_known = 0;
+    b->disk_mtime = 0;
+    b->disk_size = 0;
+    if (!b->filename) return;
+    struct stat st;
+    if (stat(b->filename, &st) != 0) return;
+    b->disk_known = 1;
+    b->disk_mtime = st.st_mtime;
+    b->disk_size = st.st_size;
+}
 
 static void line_ensure_cap(Line *l, size_t need) {
     if (need + 1 <= l->cap) return; /* +1 for NUL */
@@ -115,9 +131,14 @@ void buffer_set_from_text(Buffer *b, const char *text, size_t len) {
 }
 
 int buffer_load(Buffer *b, const char *path) {
-    free(b->filename);
-    b->filename = path ? strdup(path) : NULL;
+    /* Path may alias b->filename (e.g. `:e` reload in editor.c): never free
+     * the very string we're about to strdup, same guard as buffer_save. */
+    if (path != b->filename) {
+        free(b->filename);
+        b->filename = path ? strdup(path) : NULL;
+    }
     b->dirty = 0;
+    disk_capture(b);
 
     if (!path) {
         buffer_split_into_lines(b, "", 0);
@@ -174,5 +195,18 @@ int buffer_save(Buffer *b, const char *path) {
         b->filename = strdup(path);
     }
     b->dirty = 0;
+    disk_capture(b);
     return 0;
+}
+
+int buffer_disk_changed(const Buffer *b) {
+    if (!b->filename) return 0;
+    struct stat st;
+    if (stat(b->filename, &st) != 0) {
+        /* File gone: changed iff we had a baseline to lose. */
+        return b->disk_known;
+    }
+    /* File appeared where there was none at load time. */
+    if (!b->disk_known) return 1;
+    return st.st_mtime != b->disk_mtime || st.st_size != b->disk_size;
 }
