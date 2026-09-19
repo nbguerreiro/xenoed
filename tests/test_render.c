@@ -157,6 +157,49 @@ int main(void) {
         buffer_free(b6);
     }
 
+    /* --- Test 7: shift+wheel scrolls even with a short-line cursor -------
+     * The horizontal ruler is the LONGEST buffer line, not the cursor's
+     * line; and editor_ensure_hscroll must not snap an explicit scroll back
+     * to the cursor when the cursor's own line is scrolled out entirely. */
+    {
+        Buffer *b7 = buffer_new();
+        buffer_set_from_text(b7, line, sizeof(line)); /* long line, row 0 */
+        buffer_insert_line(b7, 1, "", 0);             /* empty line, row 1 */
+        Editor e7;
+        editor_init(&e7, b7);
+        e7.cur_line = 1; /* cursor sits on the empty line */
+        e7.cur_col = 0;
+
+        for (int i = 0; i < 4; i++)
+            render_hscroll_by(&rs, surface, &e7, 10, width);
+        CHECK(e7.left_col >= 30, "hscroll advances with cursor on empty line (left_col=%zu)",
+              e7.left_col);
+
+        render_frame(&rs, surface, &e7, width, height, 1);
+        CHECK(e7.left_col >= 30, "redraw keeps explicit scroll with empty-line cursor (left_col=%zu)",
+              e7.left_col);
+
+        /* The long row (row 0) is genuinely drawn shifted off to the left. */
+        int shifted = rs.padding - px_x(&rs, surface, line, sizeof(line), e7.left_col);
+        CHECK(shifted < rs.padding, "long line drawn shifted left (shift=%d)", shifted);
+
+        /* Back on the long line ahead of the scroll: viewport stays put. */
+        e7.cur_line = 0;
+        e7.cur_col = e7.left_col + 20;
+        render_frame(&rs, surface, &e7, width, height, 1);
+        CHECK(e7.left_col >= 30, "scroll survives cursor return (left_col=%zu)", e7.left_col);
+
+        /* A huge scroll left returns to the start. */
+        render_hscroll_by(&rs, surface, &e7, -100000, width);
+        CHECK(e7.left_col == 0, "hscroll left returns to zero (left_col=%zu)", e7.left_col);
+
+        render_frame(&rs, surface, &e7, width, height, 1);
+        CHECK(e7.left_col == 0, "no scroll at start after frame (left_col=%zu)", e7.left_col);
+
+        editor_deinit(&e7);
+        buffer_free(b7);
+    }
+
     pango_font_description_free(fd);
     cairo_surface_destroy(surface);
     editor_deinit(&ed);

@@ -102,7 +102,12 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   `editor_dispatch_command()`: it only fires Ctrl-bound commands whose input
   kind is INSERT, INSERT_WORD or NONE (plain keys are text, the leader key is the spacebar,
   so neither is dispatchable mid-typing; `'\t'`/Ctrl+I is excluded to keep Tab
-  as text). `editor_request_user_command()` matches WORD's mode guard by
+  as text). `Ctrl+s` is reserved before that dispatch (todo #36): it saves
+  via `editor_run_command(ed, "w")` -- the `:w` path, so `b->dirty` clears
+  (the status bar's [+] disappears on the next redraw), a file changed on
+  disk defers to the same overwrite-or-reload conflict main.c resolves, and
+  insert mode is left untouched; 's' is in the `insert_ctrl` warnings list
+  so a config binding to Ctrl+s is flagged. `editor_request_user_command()` matches WORD's mode guard by
   refusing everything except INSERT/INSERT_WORD/NONE from MODE_INSERT. `editor.c`'s
   `editor_insert_text()` takes a `force_charwise` flag (set by
   `editor_insert_at_cursor`) that disables the trailing-'\n' linewise heuristic

@@ -855,6 +855,50 @@ int main(void) {
         buffer_free(b);
     }
 
+    /* Test 45b: Ctrl+s in insert mode saves like :w (todo #36). The status
+     * bar's [+] marker is b->dirty, so a successful write clears it (the
+     * marker changes, i.e. disappears, on the next redraw), the editor
+     * stays in insert mode, and the write actually lands on disk. */
+    {
+        const char *path = "/tmp/xenoed_ctrls.txt";
+        FILE *tf = fopen(path, "wb");
+        CHECK(tf != NULL);
+        fputs("start\n", tf);
+        fclose(tf);
+
+        Buffer *b = buffer_new();
+        CHECK(buffer_load(b, path) == 0 && !b->dirty);
+        Editor ed; editor_init(&ed, b);
+
+        feed(&ed, "A-"); /* append '-', still in insert mode */
+        printf("Test 45b (edited, pre-save): dirty=%d\n", b->dirty);
+        CHECK(b->dirty); /* the [+] would be showing */
+
+        char ctrl_s[2] = { ctrl_byte_for_key('s'), '\0' };
+        feed(&ed, ctrl_s);
+        printf("Test 45b (Ctrl+s): status=\"%s\" dirty=%d mode=%d\n",
+               ed.status, b->dirty, ed.mode);
+        CHECK(strstr(ed.status, "written") != NULL);
+        CHECK(!b->dirty);              /* [+] marker gone */
+        CHECK(ed.mode == MODE_INSERT); /* still inserting */
+
+        feed(&ed, "?"); /* keep typing after the save */
+        CHECK(b->dirty);
+
+        tf = fopen(path, "rb");
+        CHECK(tf != NULL);
+        char rb[64] = {0};
+        size_t n = fread(rb, 1, sizeof(rb) - 1, tf);
+        fclose(tf);
+        rb[n] = '\0';
+        printf("Test 45b (file on disk): \"%.*s\"\n", (int)n, rb);
+        CHECK(strcmp(rb, "start-\n") == 0); /* buffer_save appends '\n' */
+
+        editor_deinit(&ed);
+        buffer_free(b);
+        remove(path);
+    }
+
     /* Test 46: ":q" refuses with unsaved changes; ":q!" quits regardless */
     {
         Buffer *b = buffer_new();

@@ -90,6 +90,22 @@ static size_t line_left_col(const Line *l, size_t left_col) {
     return left_col;
 }
 
+/* The longest line in the buffer -- the horizontal ruler that owns
+ * ed->left_col's scroll space. Scrolling advances left_col along this
+ * line, NOT along the cursor's, so shift+wheel keeps working while the
+ * cursor rests on a short or empty line (the headless tests had only ever
+ * exercised cursor-on-long-line). Shorter rows get clamped by their own
+ * line_left_col() at draw time: a row whose length is past left_col is
+ * simply drawn scrolled out past the left edge. */
+static size_t buffer_max_line_len(Buffer *b) {
+    size_t maxlen = 0;
+    for (size_t i = 0; i < b->count; i++) {
+        size_t len = buffer_line(b, i)->len;
+        if (len > maxlen) maxlen = len;
+    }
+    return maxlen;
+}
+
 /* Horizontal scrolling (todo #35). Called once per frame from render_frame
  * with the frame's Cairo context -- the only place x positions can be
  * measured -- to nudge ed->left_col the minimum distance needed to keep
@@ -100,6 +116,16 @@ static size_t line_left_col(const Line *l, size_t left_col) {
 static void editor_ensure_hscroll(cairo_t *cr, RenderState *rs, Editor *ed, int text_width) {
     if (text_width <= 0) return;
     const Line *l = buffer_line(ed->buf, ed->cur_line);
+
+    /* The cursor's own line is shorter than the scroll offset: it is
+     * scrolled entirely out of view. Leave the user's scroll alone instead
+     * of snapping back to the cursor -- the long rows being read keep
+     * their offsets via per-row line_left_col() at draw time. (Without
+     * this, a cursor sitting on a short line instantly undid every
+     * shift+wheel move.) Navigation back into the line re-snaps on its
+     * next redraw. */
+    if (ed->left_col >= l->len) return;
+
     size_t lc = line_left_col(l, ed->left_col);
 
     if (ed->cur_col < lc) {
@@ -136,16 +162,35 @@ static void editor_ensure_hscroll(cairo_t *cr, RenderState *rs, Editor *ed, int 
 void render_hscroll_by(RenderState *rs, cairo_surface_t *surface, Editor *ed,
                        int delta_cols, int width) {
     if (delta_cols == 0 || ed->buf->count == 0) return;
-    const Line *l = buffer_line(ed->buf, ed->cur_line);
-    size_t lc = line_left_col(l, ed->left_col);
+    Buffer *b = ed->buf;
+    const Line *l = buffer_line(b, ed->cur_line); /* cursor line, for below */
+
+    /* Step left_col along the buffer's longest line (the horizontal ruler),
+     * not the cursor's line: byte boundaries exist there to walk even when
+     * the cursor sits on a short/empty row, which is the very situation
+     * shift+wheel is used in (reading a long line above a short tail). */
+    size_t maxlen = buffer_max_line_len(b);
+    if (maxlen == 0) return;
+
+    /* The line that owns maxlen -- byte boundaries walked below belong to
+     * it (they may not be boundaries on the cursor's shorter line). */
+    Line *ruler = NULL;
+    for (size_t i = 0; i < b->count; i++) {
+        Line *l = buffer_line(b, i);
+        if (!ruler || l->len > ruler->len) ruler = l;
+    }
+
+    size_t lc = ed->left_col;
+    if (lc >= maxlen) lc = maxlen;
+    while (lc > 0 && lc < maxlen && utf8_is_cont((unsigned char)ruler->data[lc])) lc--;
 
     /* Move the left edge left (negative) or right by `delta_cols` chars. */
     if (delta_cols < 0) {
         size_t n = (size_t)(-delta_cols);
-        while (n > 0 && lc > 0) { lc = utf8_prev_boundary(l->data, lc); n--; }
+        while (n > 0 && lc > 0) { lc = utf8_prev_boundary(ruler->data, lc); n--; }
     } else {
         size_t n = (size_t)delta_cols;
-        while (n > 0 && lc < l->len) { lc = utf8_next_boundary(l->data, l->len, lc); n--; }
+        while (n > 0 && lc < maxlen) { lc = utf8_next_boundary(ruler->data, maxlen, lc); n--; }
     }
     ed->left_col = lc;
 

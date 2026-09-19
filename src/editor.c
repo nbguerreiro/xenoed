@@ -43,13 +43,13 @@ void editor_init(Editor *ed, Buffer *buf) {
      * normal/visual-mode commands, so a binding that shadows a built-in is
      * a footgun the author of a config deserves to be told about. Ctrl
      * bindings are delivered as ASCII control characters, which insert
-     * mode already interprets for Ctrl+X/C/V; a table entry copying one of
-     * those never fires from insert mode. ' ' is the leader key: binding it
-     * plain would swallow the leader namespace entirely, so that's listed
-     * as a built-in too. */
+     * mode already interprets for Ctrl+X/C/V and Ctrl+s (save); a table
+     * entry copying one of those never fires from insert mode. ' ' is the
+     * leader key: binding it plain would swallow the leader namespace
+     * entirely, so that's listed as a built-in too. */
     const char normal_builtins[] = "hjl k0$GgiaAIoOrDxdypPuvV  :!/nN'm";
     const char visual_builtins[] = "hjl k0$GgydxpvV:!";
-    const char insert_ctrl[] = "xcv";
+    const char insert_ctrl[] = "xcvs";
     for (int i = 0; XENOED_COMMANDS[i].script != NULL; i++) {
         const XenoedKey *k = &XENOED_COMMANDS[i].key;
         const char *where = NULL;
@@ -1701,6 +1701,19 @@ static void handle_insert(Editor *ed, EditorSpecialKey special, const char *text
         }
         if (c0 == 0x03) {
             editor_yank_selection(ed);
+            return;
+        }
+        if (c0 == 0x13) {
+            /* Ctrl+s saves, exactly as if `:w` were typed (todo #36). The
+             * status bar's [+] is `b->dirty`, so a successful write clears
+             * it -- the marker changes (goes away) on the next redraw. The
+             * `:w` path (editor_run_command) is used deliberately rather
+             * than a bare buffer_save: a file changed on disk defers to the
+             * overwrite-or-reload conflict main.c resolves right after
+             * editor_handle_key(), a nameless buffer reports the `:w`
+             * error, and the status line confirms the write. Insert mode
+             * is left untouched. */
+            editor_run_command(ed, "w");
             return;
         }
     }

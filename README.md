@@ -203,7 +203,7 @@ the known commands:
 
 | Command | Action |
 |---|---|
-| `w` | save |
+| `w` | save (`Ctrl+s` from insert mode does the same) |
 | `w path` | save as `path` |
 | `q` | quit (refuses if there are unsaved changes) |
 | `q!` | quit, discarding changes |
@@ -220,10 +220,10 @@ exactly as they did with the old bar, just entered through dmenu instead.
 
 If the file on disk was changed by another program since xenoed last loaded
 or saved it -- the `[!]` the status bar shows -- a save (`:w`, `:w path`,
-`:wq`, `:x`) won't silently clobber it. Instead a dmenu warning asks whether
-to **Overwrite** the on-disk version anyway or **Reload from disk** to keep
-the external edit and discard your in-editor changes; Escape cancels and
-leaves the buffer unsaved.
+`:wq`, `:x`, or `Ctrl+s` from insert mode) won't silently clobber it. Instead
+a dmenu warning asks whether to **Overwrite** the on-disk version anyway or
+**Reload from disk** to keep the external edit and discard your in-editor
+changes; Escape cancels and leaves the buffer unsaved.
 
 The status bar's filename is shortened the way shells do: a file under
 `$HOME` shows as `~/...` instead of the full `/home/user/...` path (no

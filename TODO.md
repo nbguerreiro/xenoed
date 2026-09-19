@@ -44,6 +44,6 @@
 - [x] 33. repeat tests: tests/test_repeat.c expected "." to replay the FIRST insert, but begin_recording() clears prior events, so the LAST edit wins -- the code is vim-correct ("repeat last change"); fixed the test to assert last-change replay
 - [x] 34. zoom in/out: Ctrl+= / Ctrl+- / Ctrl+wheel re-step the Pango font at the X11 layer (main.c zoom_font() + render_init()), XENOED_ZOOM_STEP/MIN/MAX in config.h
 - [x] 35. horizontal scroll: Shift+wheel by XENOED_HSCROLL_COLS chars (main.c), cursor-follow/keep-in-view via render.c editor_ensure_hscroll()/render_hscroll_by(); left_col field on Editor, view-layer-only (needs Pango pixel widths); XENOED_HSCROLL_COLS in config.h; tests/test_render.c headless coverage
-- [ ] 36. Ctrl-s (in insert mode) should change the [+] mark on the status bar
+- [x] 36. Ctrl-s (in insert mode) should change the [+] mark on the status bar: Ctrl+s (0x13) is intercepted in editor.c's insert-mode handler and routed through editor_run_command("w") -- the `:w` path, so a successful save clears b->dirty and the [+] marker disappears, a file changed on disk defers to the same overwrite-or-reload conflict, a nameless buffer reports the `:w` error, and insert mode is left untouched; 's' added to the reserved insert-mode Ctrl keys the config-warning list checks. Headless test 45b in tests/test_editor.c (manual cc suite)
 
 

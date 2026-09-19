@@ -173,7 +173,8 @@ typedef enum {
      * there): plain keys are the text you're typing and the leader key
      * is the spacebar, so neither can double as a command prefix without
      * swallowing real input -- the table's warning list already treats
-     * Ctrl+X/C/V as reserved insert-mode keys for the same reason. */
+     * Ctrl+X/C/V and Ctrl+s as reserved insert-mode keys for the same
+     * reason. */
     CMD_INPUT_INSERT,
 
     /* The insert-mode completion sibling of CMD_INPUT_WORD: the word
