@@ -714,6 +714,75 @@ static void process_editor_side_effects(Display *dpy, Window win, Editor *ed, X1
     }
 }
 
+/* Reclaim keyboard focus after an embedded dmenu exits (todo #37). Dmenu
+ * hands focus back on its own most of the time, but on some WMs the single
+ * XSetInputFocus() right after waitpid() loses a race: the window manager
+ * processes dmenu's unmap asynchronously and can re-steal focus afterwards
+ * -- the "sometimes loses focus" repro. So mirror dmenu's own grabfocus()
+ * trick: poke _NET_ACTIVE_WINDOW for EWMH-aware WMs, then spin on
+ * XGetInputFocus()/XSetInputFocus() until the server actually reports the
+ * editor window in focus again (bounded, ~half a second). */
+static void restore_focus(Display *dpy, Window win) {
+    XEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.xclient.type = ClientMessage;
+    ev.xclient.window = RootWindow(dpy, DefaultScreen(dpy));
+    ev.xclient.message_type = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = 1; /* source: application */
+    ev.xclient.data.l[1] = CurrentTime;
+    ev.xclient.data.l[2] = (long)win;
+    XSendEvent(dpy, ev.xclient.window, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+
+    struct timespec step = { .tv_sec = 0, .tv_nsec = 10 * 1000 * 1000 };
+    Window focus = None;
+    int revert = RevertToNone;
+    for (int i = 0; i < 50; i++) {
+        XGetInputFocus(dpy, &focus, &revert);
+        if (focus == win) return;
+        XSetInputFocus(dpy, win, RevertToParent, CurrentTime);
+        nanosleep(&step, NULL);
+    }
+}
+
+static int suppress_x_error(Display *dpy, XErrorEvent *err) {
+    (void)dpy; (void)err;
+    return 0;
+}
+
+/* Give keyboard focus back to whichever window had it when xenoed started
+ * (normally the terminal that launched us) just before this window is torn
+ * down. Without this, a click-to-focus WM that tracks no focus history can
+ * leave nothing focused once xenoed's window is destroyed, so the terminal
+ * sits there refusing keystrokes. Only restore when the target still exists
+ * and is mapped -- a dead/iconified window gets its BadWindow/BadMatch
+ * swallowed by the temporary error handler instead of killing us at
+ * "exit time". */
+static void restore_previous_focus(Display *dpy, Window target) {
+    if (target == None || target == PointerRoot) return;
+
+    XErrorHandler old = XSetErrorHandler(suppress_x_error);
+    XWindowAttributes wa;
+    int alive = XGetWindowAttributes(dpy, target, &wa) && wa.map_state == IsViewable;
+    if (alive) {
+        XEvent ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.xclient.type = ClientMessage;
+        ev.xclient.window = RootWindow(dpy, DefaultScreen(dpy));
+        ev.xclient.message_type = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+        ev.xclient.format = 32;
+        ev.xclient.data.l[0] = 1; /* source: application */
+        ev.xclient.data.l[1] = CurrentTime;
+        ev.xclient.data.l[2] = (long)target;
+        XSendEvent(dpy, ev.xclient.window, False,
+                   SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+        XSetInputFocus(dpy, target, RevertToParent, CurrentTime);
+    }
+    XSync(dpy, False);
+    XSetErrorHandler(old);
+}
+
 static char *run_dmenu(Display *dpy, Window win, const char *const *items, int n_items,
                         const char *prompt) {
     char win_str[32];
@@ -760,7 +829,7 @@ static char *run_dmenu(Display *dpy, Window win, const char *const *items, int n
                 free(out);
                 close(outpipe[0]);
                 waitpid(pid, NULL, 0);
-                XSetInputFocus(dpy, win, RevertToParent, CurrentTime);
+                restore_focus(dpy, win);
                 return NULL;
             }
             out = new_out;
@@ -771,7 +840,7 @@ static char *run_dmenu(Display *dpy, Window win, const char *const *items, int n
     close(outpipe[0]);
 
     waitpid(pid, NULL, 0);
-    XSetInputFocus(dpy, win, RevertToParent, CurrentTime);
+    restore_focus(dpy, win);
 
     if (!out || outlen == 0) {
         free(out);
@@ -1036,6 +1105,13 @@ int main(int argc, char **argv) {
         fprintf(stderr, "xenoed: cannot open X display\n");
         return 1;
     }
+
+    /* Remember who had focus before we map our own window (the launching
+     * terminal, normally) so we can hand focus back on exit -- see
+     * restore_previous_focus(). */
+    Window prev_focus = None;
+    int prev_revert = RevertToNone;
+    XGetInputFocus(dpy, &prev_focus, &prev_revert);
 
     int screen = DefaultScreen(dpy);
     Window root = RootWindow(dpy, screen);
@@ -1366,6 +1442,7 @@ int main(int argc, char **argv) {
     pango_font_description_free(font_desc);
     backbuffer_destroy(&bb);
     XFreeGC(dpy, bb.gc);
+    restore_previous_focus(dpy, prev_focus);
     XDestroyWindow(dpy, win);
     XCloseDisplay(dpy);
 

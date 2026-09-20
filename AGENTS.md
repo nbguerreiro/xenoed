@@ -61,6 +61,23 @@ deps: `build-essential pkg-config libx11-dev libcairo2-dev libpango1.0-dev`.
   is the Shift+wheel analogue of `editor_scroll_by()`; `render_xy_to_pos`
   adds back the scrolled-px so mouse hit-testing stays byte-accurate.
   `tests/test_render.c` covers all of it headlessly (image surface, no X).
+  Focus restoration after dmenu (todo #37): `run_dmenu`'s single
+  `XSetInputFocus` after `waitpid` raced the WM processing dmenu's unmap
+  asynchronously, so focus was *sometimes* lost ("hollow cursor, keystrokes
+  go elsewhere"). `restore_focus()` in main.c (used by `run_dmenu`) and its
+  self-contained twin in repeat.c (used by the `/` search picker, which
+  previously never restored focus at all) mirror dmenu's own `grabfocus()`:
+  send `_NET_ACTIVE_WINDOW` to root for EWMH WMs, then loop
+  `XGetInputFocus`/`XSetInputFocus` (10ms steps, bounded ~0.5s) until the
+  server confirms the editor window has focus. Deliberately NOT applied to
+  the CMD_INPUT_NONE/detached spawn paths — the user may have launched a
+  program and we must not steal focus back from it. Exit is the mirror case:
+  `main.c` grabs the focused window (`prev_focus`) right after XOpenDisplay,
+  before the editor window maps, and `restore_previous_focus()` hands focus
+  back to it (the launching terminal) just before `XDestroyWindow` — without
+  it, a click-to-focus WM with no focus history leaves nothing focused after
+  xenoed quits. It validates the target still exists and is mapped and
+  swallows BadWindow/BadMatch via a temporary `XSetErrorHandler`.
 - **Biggest gotcha**: the `.` repeat command and the `/` search prompt are NOT
   in `editor.c` — they live in `src/repeat.c` as ELF linker wrappers. Both the
   binary and tests link with `-Wl,--wrap=editor_init -Wl,--wrap=editor_handle_key`;

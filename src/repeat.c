@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include "editor.h"
 #include <X11/Xlib.h>
 #include <stdio.h>
@@ -5,6 +6,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 /* Linker wrapper around editor_handle_key keeps the repeat implementation
@@ -110,6 +112,40 @@ static Window top_level_window(Display *dpy, Window win) {
     return win;
 }
 
+/* Reclaim keyboard focus after the search dmenu exits (todo #37): same
+ * race and same fix as main.c's restore_focus() -- the WM can re-steal
+ * focus asynchronously after dmenu unmaps, so poke _NET_ACTIVE_WINDOW for
+ * EWMH WMs and then spin briefly on XGetInputFocus()/XSetInputFocus() until
+ * the server reports `win` in focus again. Opens its own short-lived
+ * connection because run_search_dmenu() already closed the shared one. */
+static void restore_focus(Window win) {
+    Display *dpy = XOpenDisplay(NULL);
+    if (!dpy) return;
+
+    XEvent ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.xclient.type = ClientMessage;
+    ev.xclient.window = RootWindow(dpy, DefaultScreen(dpy));
+    ev.xclient.message_type = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = 1; /* source: application */
+    ev.xclient.data.l[1] = CurrentTime;
+    ev.xclient.data.l[2] = (long)win;
+    XSendEvent(dpy, ev.xclient.window, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+
+    struct timespec step = { .tv_sec = 0, .tv_nsec = 10 * 1000 * 1000 };
+    Window focus = None;
+    int revert = RevertToNone;
+    for (int i = 0; i < 50; i++) {
+        XGetInputFocus(dpy, &focus, &revert);
+        if (focus == win) break;
+        XSetInputFocus(dpy, win, RevertToParent, CurrentTime);
+        nanosleep(&step, NULL);
+    }
+    XCloseDisplay(dpy);
+}
+
 static char *run_search_dmenu(void) {
     Display *dpy = XOpenDisplay(NULL);
     if (!dpy) return NULL;
@@ -175,6 +211,7 @@ static char *run_search_dmenu(void) {
                 free(out);
                 close(outpipe[0]);
                 waitpid(pid, NULL, 0);
+                restore_focus(win);
                 return NULL;
             }
             out = new_out;
@@ -187,6 +224,7 @@ static char *run_search_dmenu(void) {
 
     int status = 0;
     waitpid(pid, &status, 0);
+    restore_focus(win);
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || outlen == 0) {
         free(out);
         return NULL;
