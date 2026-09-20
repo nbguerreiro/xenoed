@@ -263,6 +263,7 @@ static const XenoedCommand XENOED_COMMANDS[] = {
     { "tag_goto",              "tag_goto.sh",             XENOED_KEY_CTRL(']'),   CMD_INPUT_WORD },
     { "man",                     "man.sh",             XENOED_KEY_LEADER('k'),   CMD_INPUT_WORD },
     { "escolha",                "escolha.sh",             XENOED_KEY_CTRL('o'),   CMD_INPUT_WORD },
+    { "fmt",                       "fmt -s",             XENOED_KEY_LEADER('f'),   CMD_INPUT_SELECTION },
 
    /* { "insert_date",      "date +%F",               XENOED_KEY_CTRL('d'),    CMD_INPUT_INSERT }, */
     /* { "complete_word", "./script.sh",     XENOED_KEY_CTRL('n'),    CMD_INPUT_INSERT_WORD }, */
